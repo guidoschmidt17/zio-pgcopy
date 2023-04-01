@@ -1,0 +1,10 @@
+{
+    "files.watcherExclude": {
+        "**/target": true
+    },
+    "window.restoreFullscreen": true,
+    "window.newWindowDimensions": "fullscreen",
+    "workbench.editor.restoreViewState": true,
+    "metals.enableSemanticHighlighting": true,
+    "editor.semanticHighlighting.enabled": true
+}
