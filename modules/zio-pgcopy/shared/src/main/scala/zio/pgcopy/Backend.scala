@@ -1,13 +1,14 @@
-package postgrescopy
+package zio
+package pgcopy
 
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.ByteBufUtil
 
 import scala.annotation.switch
 
-private[postgrescopy] trait BackendMessage
+private[pgcopy] trait BackendMessage
 
-private[postgrescopy] object BackendMessage:
+private[pgcopy] object BackendMessage:
   def apply()(using buf: ByteBuf): BackendMessage =
     val tag = buf.readByte
     val len = buf.readInt - 4

@@ -1,4 +1,5 @@
-package postgrescopy
+package zio
+package pgcopy
 
 import com.ongres.scram.client.*
 import com.ongres.scram.common.stringprep.StringPreparations
@@ -23,12 +24,12 @@ import java.util.concurrent.atomic.AtomicReference
 import javax.net.ssl.TrustManagerFactory
 import scala.annotation.switch
 
+import FrontendMessage.*
+import PostgresCopy.*
 import ConnectionPool.*
 import Connection.Status
 import Status.*
 import BackendMessage.*
-import FrontendMessage.*
-import PostgresCopy.*
 
 case class Connection[E: MakeError](
     private val future: ChannelFuture,
@@ -75,7 +76,7 @@ case class Connection[E: MakeError](
   def isOpen = getStatus != Closed
   def isClosed = getStatus == Closed
 
-  private[postgrescopy] def close: IO[E, Unit] =
+  private[pgcopy] def close: IO[E, Unit] =
     if isOpen then
       for
         _ <- pool.invalidate(this)
@@ -85,10 +86,10 @@ case class Connection[E: MakeError](
       yield ()
     else ZIO.unit
 
-  private[postgrescopy] def handle(message: BackendMessage): IO[E, Unit] =
+  private[pgcopy] def handle(message: BackendMessage): IO[E, Unit] =
     if isOpen then incoming.offer(message).unit else incoming.shutdown
 
-  private[postgrescopy] def startup: IO[E, Unit] =
+  private[pgcopy] def startup: IO[E, Unit] =
     import config.server.*
     if status.compareAndSet(NotConnected, Connecting) then
       for
@@ -128,6 +129,7 @@ case class Connection[E: MakeError](
 
   private def handleMessage(message: BackendMessage)(using makeError: MakeError[E]): IO[E, Unit] =
     import config.server.*
+    // if !message.isInstanceOf[BackendMessage.CopyData] then println(s"$message")
     message match
       case CopyOutResponse(_, _, _)         => setStatus(CopyingOut)
       case CopyInResponse(_, _, _)          => setStatus(CopyingIn)
@@ -194,7 +196,7 @@ object Connection:
   enum Status:
     case NotConnected, Connecting, Connected, Idle, NotIdle, Failed, Prepared, CopyingOut, CopyingIn, CommandCommpleted, Closed
 
-private[postgrescopy] case class ConnectionPool[E: MakeError] private (
+private[pgcopy] case class ConnectionPool[E: MakeError] private (
     private val zpool: Ref[ZPool[E, Connection[E]] | Null],
     private val bootstrap: Bootstrap,
     private val config: Configuration
@@ -225,7 +227,7 @@ private[postgrescopy] case class ConnectionPool[E: MakeError] private (
   private def release[E](connection: Connection[E]): UIO[Unit] =
     connection.close.ignore
 
-  private final val RetrySchedule =
+  private[pgcopy] final val RetrySchedule =
     Schedule.exponential(base, factor) && Schedule
       .recurs(math.max(0, retries - 1))
       .onDecision((state, out, decision) =>
@@ -234,7 +236,7 @@ private[postgrescopy] case class ConnectionPool[E: MakeError] private (
           case Schedule.Decision.Done                => ZIO.debug(s"pgcopy/connectionpool/acquire : retries failed $state/${retries} ")
       )
 
-private[postgrescopy] object ConnectionPool:
+private[pgcopy] object ConnectionPool:
 
   def make[E: MakeError] =
     for
@@ -308,7 +310,6 @@ private[postgrescopy] object ConnectionPool:
     import config.server.*
     import config.io.*
     val ssl = Ssl(sslmode)
-    println(s"sslmode : $sslmode $ssl")
     val initializer = new ChannelInitializer[NioSocketChannel]:
       def initChannel(channel: NioSocketChannel) =
         ssl match

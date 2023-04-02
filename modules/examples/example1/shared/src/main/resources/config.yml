@@ -1,0 +1,33 @@
+
+zio-pgcopy:
+
+  server:
+    host           : localhost
+    port           : 5432
+    sslmode        : disable # disable | trust | runtime 
+    database       : world
+    user           : jimmy
+    password       : banana
+
+  pool:
+    min            : 8
+    max            : 64
+    timeout        : 15.minutes
+
+  retry:
+    base           : 100.milliseconds
+    factor         : 1.25
+    retries        : 25
+
+  io:
+    socketbuffer   : 8388608
+    bytebufinitial : 131072
+    incomingqueue  : 8192
+    outgoingstream : 4096
+
+example1:
+
+  copy-in:  
+    rows           : 100000
+    repeats        : 0
+  

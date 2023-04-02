@@ -1,3 +1,5 @@
+package zio
+
 import io.netty.buffer.ByteBuf
 import zio.Random.nextUUID
 import zio.*
@@ -7,7 +9,7 @@ import java.nio.charset.StandardCharsets.UTF_8
 import java.util.UUID
 import scala.quoted.*
 
-package object postgrescopy:
+package object pgcopy:
 
   extension (buf: ByteBuf)
     def readUtf8(len: Int): String =
@@ -60,6 +62,10 @@ package object postgrescopy:
       val most = bb.getLong
       val least = bb.getLong
       Uuid(new UUID(most, least))
+
+    inline given Conversion[Uuid, UUID] = _.uuid
+
+    inline given Conversion[UUID, Uuid] = Uuid(_)
 
   object Field:
 

@@ -32,6 +32,29 @@ lazy val `zio-pgcopy` =
       )
     )
 
+lazy val `example-1` =
+  crossProject(JVMPlatform)
+    .crossType(CrossType.Full)
+    .in(file("modules/examples/example1"))
+    .dependsOn(`zio-pgcopy` % Cctt)
+    .settings(commonSettings)
+    .settings(commonDependencies)
+    .settings(
+      libraryDependencies ++= Seq(
+        "dev.zio" %%% "zio-config" % "4.0.0-RC14",
+        "dev.zio" %%% "zio-config-yaml" % "4.0.0-RC14"
+      )
+    )
+    .settings(
+      assembly / mainClass := Some("example1.Example1")
+    )
+    .jvmSettings(
+      assembly / assemblyMergeStrategy := {
+        case PathList("META-INF", "io.netty.versions.properties") => MergeStrategy.first
+        case x                                                    => (assembly / assemblyMergeStrategy).value(x)
+      }
+    )
+
 lazy val commonSettings = Seq(
   Test / console / scalacOptions :=
     (Compile / console / scalacOptions).value

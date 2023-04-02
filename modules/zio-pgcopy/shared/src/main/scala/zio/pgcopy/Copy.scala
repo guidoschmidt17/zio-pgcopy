@@ -1,4 +1,5 @@
-package postgrescopy
+package zio
+package pgcopy
 
 import zio.*
 import zio.stream.*
@@ -34,7 +35,7 @@ object PostgresCopy:
         ZIO
           .scoped(pool.get.flatMap(_.copyIn(insert, rows, sizeHintPerRow)))
           .catchAllDefect(ZIO.fail(_))
-          .retryN(1)
+          .retry(pool.RetrySchedule)
           .catchAll(e => ZIO.fail(makeError(e)))
       instream.chunks.tap(copy(_)).runDrain
 
@@ -58,7 +59,7 @@ object PostgresCopy:
           .flattenTake
         _ <- loopResult(out, offset, limit)
           .catchAllDefect(ZIO.fail(_))
-          .retryN(1)
+          .retry(pool.RetrySchedule)
           .ensuring(out.offer(Take.end))
           .forkScoped
       yield outstream
@@ -79,7 +80,7 @@ object PostgresCopy:
           .catchAll(e => ZIO.fail(makeError(e)))
       copy
 
-  private[postgrescopy] case class ServerConfig(
+  private[pgcopy] case class ServerConfig(
       host: String,
       port: Int,
       sslmode: ConnectionPool.Ssl.Mode,
@@ -87,12 +88,12 @@ object PostgresCopy:
       user: String,
       password: String
   )
-  private[postgrescopy] case class PoolConfig(min: Int, max: Int, timeout: Duration)
-  private[postgrescopy] case class RetryConfig(base: Duration, factor: Double, retries: Int)
-  private[postgrescopy] case class IoConfig(sockerbuffer: Int, bytebufinitial: Int, incomingqueue: Int, outgpingstream: Int)
-  private[postgrescopy] case class Configuration(server: ServerConfig, pool: PoolConfig, retry: RetryConfig, io: IoConfig)
+  private[pgcopy] case class PoolConfig(min: Int, max: Int, timeout: Duration)
+  private[pgcopy] case class RetryConfig(base: Duration, factor: Double, retries: Int)
+  private[pgcopy] case class IoConfig(sockerbuffer: Int, bytebufinitial: Int, incomingqueue: Int, outgpingstream: Int)
+  private[pgcopy] case class Configuration(server: ServerConfig, pool: PoolConfig, retry: RetryConfig, io: IoConfig)
 
-  private[postgrescopy] final val config: Config[Configuration] =
+  private[pgcopy] final val config: Config[Configuration] =
     val host = Config.string("host").withDefault("localhost")
     val port = Config.int("port").withDefault(5432)
     val sslmode = Config
@@ -118,4 +119,4 @@ object PostgresCopy:
     val incomingqueue = Config.int("incomingqueue").withDefault(8 * 1024)
     val outgoingstream = Config.int("outgoingstream").withDefault(4 * 1024)
     val io = (socketbuffer ++ bytebufinitial ++ incomingqueue ++ outgoingstream).map((s, b, i, o) => IoConfig(s, b, i, o)).nested(("io"))
-    (server ++ pool ++ retry ++ io).nested("pgcopy").map((s, p, r, i) => Configuration(s, p, r, i))
+    (server ++ pool ++ retry ++ io).nested("zio-pgcopy").map((s, p, r, i) => Configuration(s, p, r, i))

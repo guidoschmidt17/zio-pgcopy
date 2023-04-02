@@ -1,4 +1,5 @@
-package postgrescopy
+package zio
+package pgcopy
 
 import io.netty.buffer.ByteBuf
 
@@ -282,7 +283,6 @@ object Codec:
     def apply(a: Seq[Uuid])(using ByteBuf) = SeqBuilder[Uuid](a, uuid)
 
   final lazy val Types: Map[BaseEncoder[?] | BaseSeqEncoder[?], Int] = Map(
-    // scalar types
     bool -> 16,
     bytea -> 17,
     char -> 18,
@@ -300,8 +300,6 @@ object Codec:
     interval -> 1186,
     numeric -> 1700,
     uuid -> 2950,
-
-    // array types
     _bool -> 1000,
     _bytea -> 1001,
     _char -> 1002,

@@ -1,4 +1,5 @@
-package postgrescopy
+package zio
+package pgcopy
 
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.PooledByteBufAllocator
@@ -9,7 +10,7 @@ import java.security.MessageDigest
 
 import FrontendMessage.*
 
-private[postgrescopy] trait FrontendMessage:
+private[pgcopy] trait FrontendMessage:
   val payload: ByteBuf
   protected val buf: ByteBuf = PooledByteBufAllocator.DEFAULT.directBuffer(ByteBufInitialSize)
   protected def lengthPrefixed(i: Int, p: ByteBuf): ByteBuf =
@@ -18,7 +19,7 @@ private[postgrescopy] trait FrontendMessage:
 enum Variant:
   case Portal, Statement
 
-private[postgrescopy] object FrontendMessage:
+private[pgcopy] object FrontendMessage:
 
   trait UntaggedFrontendMessage extends FrontendMessage:
     buf.writeInt(Int.MinValue)
@@ -136,6 +137,6 @@ private[postgrescopy] object FrontendMessage:
       buf.writeShort(-1)
       lengthPrefixed(buf)
 
-  private[postgrescopy] final val Header = "PGCOPY".getBytes.nn ++ Array(0x0a, 0xff, 0x0d, 0x0a, 0x00).map(_.toByte)
+  private[pgcopy] final val Header = "PGCOPY".getBytes.nn ++ Array(0x0a, 0xff, 0x0d, 0x0a, 0x00).map(_.toByte)
 
-  private[postgrescopy] final var ByteBufInitialSize = 8 * 1024
+  private[pgcopy] final var ByteBufInitialSize = 8 * 1024
