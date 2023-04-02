@@ -1,2 +1,6 @@
-# eventsourcing-3 using zio, postgres, skunk, kafka, neo4j
+# zio-pgcopy
+
+A library to do very fast bulk inserts/selects with a PostgreSQL database using ZIO 2, Netty 4.1 and the PostgreSQL binary wire protocol 3.
+
+
 

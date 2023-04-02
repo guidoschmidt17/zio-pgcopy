@@ -4,15 +4,12 @@
 .dotty-ide*
 .idea/
 **.metals*/
-**node_modules/
 .vscode/
 *.worksheet.sc
 **metals.sbt
 **target/
 *.log
-**META-INF/reflections/codec-reflections.xml
 **.DS_Store
 .DS_Store
-bundle.js
 data/
 *.sh
