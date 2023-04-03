@@ -9,7 +9,6 @@ import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import scala.annotation.switch
-import scala.annotation.targetName
 import scala.reflect.ClassTag
 
 trait Decoder[A]:
@@ -55,9 +54,7 @@ object Codec:
     def apply[A: ClassTag](decoder: Decoder[A])(using ByteBuf): Array[A] = new ArrayBuilder[A].apply(decoder)
     def apply[A: ClassTag](a: Array[A], encoder: BaseEncoder[A])(using ByteBuf): Unit = new ArrayBuilder[A].apply(a, encoder)
 
-  object fields extends Codec[Short]:
-    def apply()(using buf: ByteBuf) =
-      buf.readShort
+  object fields extends Encoder[Short]:
     def apply(a: Short)(using buf: ByteBuf) =
       buf.writeShort(a)
   object int2 extends BaseCodec[Short]:

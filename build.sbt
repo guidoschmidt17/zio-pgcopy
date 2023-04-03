@@ -27,7 +27,7 @@ lazy val `zio-pgcopy` =
     )
     .jvmSettings(
       libraryDependencies ++= Seq(
-        "io.netty" % "netty-all" % "4.1.90.Final",
+        "io.netty" % "netty-all" % "4.1.91.Final",
         "com.ongres.scram" % "client" % "2.1"
       )
     )
