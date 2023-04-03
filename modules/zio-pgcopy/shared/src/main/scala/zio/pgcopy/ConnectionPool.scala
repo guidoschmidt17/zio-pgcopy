@@ -24,14 +24,14 @@ import java.util.concurrent.atomic.AtomicReference
 import javax.net.ssl.TrustManagerFactory
 import scala.annotation.switch
 
+import BackendMessage.*
+import Copy.*
 import FrontendMessage.*
-import PostgresCopy.*
 import ConnectionPool.*
 import Connection.Status
 import Status.*
-import BackendMessage.*
 
-case class Connection[E: MakeError](
+private case class Connection[E: MakeError](
     private val future: ChannelFuture,
     private val incoming: Incoming,
     private val pool: ConnectionPool[E],
@@ -89,7 +89,7 @@ case class Connection[E: MakeError](
   private[pgcopy] def handle(message: BackendMessage): IO[E, Unit] =
     if isOpen then incoming.offer(message).unit else incoming.shutdown
 
-  private[pgcopy] def startup: IO[E, Unit] =
+  private def startup: IO[E, Unit] =
     import config.server.*
     if status.compareAndSet(NotConnected, Connecting) then
       for
@@ -191,18 +191,18 @@ case class Connection[E: MakeError](
   private final var scramsession: ScramSession | Null = null
   private final var scramclientfinal: ScramSession#ClientFinalProcessor | Null = null
 
-object Connection:
+private object Connection:
 
   enum Status:
     case NotConnected, Connecting, Connected, Idle, NotIdle, Failed, Prepared, CopyingOut, CopyingIn, CommandCommpleted, Closed
 
-private[pgcopy] case class ConnectionPool[E: MakeError] private (
+private case class ConnectionPool[E: MakeError] private (
     private val zpool: Ref[ZPool[E, Connection[E]] | Null],
     private val bootstrap: Bootstrap,
     private val config: Configuration
 ):
   import ConnectionPool.*
-  import PostgresCopy.MakeError
+  import Copy.MakeError
   import config.retry.*
   import config.io.*
 
@@ -214,7 +214,7 @@ private[pgcopy] case class ConnectionPool[E: MakeError] private (
 
   private def acquire(using makeError: MakeError[E]): IO[E, Connection[E]] =
     val loop = for
-      incoming: Incoming <- Queue.bounded(incomingqueue)
+      incoming: Incoming <- Queue.bounded(incomingsize)
       channelfuture = bootstrap.connect
       connection = Connection[E](channelfuture, incoming, this, config)
       _ = channelfuture.sync.channel.pipeline.addLast(ProtocolHandler(connection))
@@ -236,12 +236,12 @@ private[pgcopy] case class ConnectionPool[E: MakeError] private (
           case Schedule.Decision.Done                => ZIO.debug(s"pgcopy/connectionpool/acquire : retries failed $state/${retries} ")
       )
 
-private[pgcopy] object ConnectionPool:
+private object ConnectionPool:
 
   def make[E: MakeError] =
     for
       ref: Ref[ZPool[E, Connection[E]] | Null] <- Ref.make(null)
-      config <- ZIO.config(PostgresCopy.config)
+      config <- ZIO.config(Copy.config)
       pool <- ZIO.succeed(ConnectionPool(ref, bootstrap(config), config))
       get = ZIO.acquireRelease(pool.acquire)(pool.release)
       zpool <- ZPool.make(get, Range.inclusive(config.pool.min, config.pool.max), config.pool.timeout)

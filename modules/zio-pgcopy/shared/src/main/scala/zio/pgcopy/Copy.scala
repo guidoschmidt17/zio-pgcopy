@@ -4,17 +4,17 @@ package pgcopy
 import zio.*
 import zio.stream.*
 
-trait PostgresCopy:
+trait Copy:
 
-  import PostgresCopy.MakeError
+  import Copy.MakeError
 
-  def copyIn[E: MakeError, A: Encoder](insert: String, rows: ZStream[Any, E, A], sizeHintPerRow: Int): IO[E, Unit]
+  def in[E: MakeError, A: Encoder](insert: String, rows: ZStream[Any, E, A], sizeHintPerRow: Int = 200): IO[E, Unit]
 
-  def copyOut[E: MakeError, A: Decoder](select: String, limit: Long = Long.MaxValue): ZIO[Scope, E, ZStream[Any, E, Chunk[A]]]
+  def out[E: MakeError, A: Decoder](select: String, limit: Long = Long.MaxValue): ZIO[Scope, E, ZStream[Any, E, Chunk[A]]]
 
-  def describeCopyOut[E: MakeError, A](select: String): IO[E, Unit]
+  protected def describeCopyOut[E: MakeError, A](select: String): IO[E, Unit]
 
-object PostgresCopy:
+object Copy:
 
   type MakeError[E] = Any => E
 
@@ -26,11 +26,11 @@ object PostgresCopy:
       cfg <- ZIO.config(config)
     yield make(pool, cfg)
 
-  private def make[E: MakeError](pool: ConnectionPool[E], config: Configuration) = new PostgresCopy:
+  private def make[E: MakeError](pool: ConnectionPool[E], config: Configuration) = new Copy:
 
     FrontendMessage.ByteBufInitialSize = config.io.bytebufinitial
 
-    def copyIn[E: MakeError, A: Encoder](insert: String, instream: ZStream[Any, E, A], sizeHintPerRow: Int) =
+    def in[E: MakeError, A: Encoder](insert: String, instream: ZStream[Any, E, A], sizeHintPerRow: Int) =
       inline def copy(rows: Chunk[A])(using makeError: MakeError[E]) =
         ZIO
           .scoped(pool.get.flatMap(_.copyIn(insert, rows, sizeHintPerRow)))
@@ -39,7 +39,7 @@ object PostgresCopy:
           .catchAll(e => ZIO.fail(makeError(e)))
       instream.chunks.tap(copy(_)).runDrain
 
-    def copyOut[E: MakeError, A: Decoder](select: String, limit: Long) =
+    def out[E: MakeError, A: Decoder](select: String, limit: Long) =
       def loopResult(out: Queue[Take[E, Chunk[A]]], offsetRef: Ref[Long], n: Long) =
         def resultStream(offset: Long, limit: Long) =
           for
@@ -53,7 +53,7 @@ object PostgresCopy:
         yield ()
       for
         offset: Ref[Long] <- Ref.make(0L)
-        out: Queue[Take[E, Chunk[A]]] <- Queue.bounded(config.io.outgpingstream)
+        out: Queue[Take[E, Chunk[A]]] <- Queue.bounded(config.io.outgoingsize)
         outstream = ZStream
           .fromQueue(out, out.capacity)
           .flattenTake
@@ -80,19 +80,6 @@ object PostgresCopy:
           .catchAll(e => ZIO.fail(makeError(e)))
       copy
 
-  private[pgcopy] case class ServerConfig(
-      host: String,
-      port: Int,
-      sslmode: ConnectionPool.Ssl.Mode,
-      database: String,
-      user: String,
-      password: String
-  )
-  private[pgcopy] case class PoolConfig(min: Int, max: Int, timeout: Duration)
-  private[pgcopy] case class RetryConfig(base: Duration, factor: Double, retries: Int)
-  private[pgcopy] case class IoConfig(sockerbuffer: Int, bytebufinitial: Int, incomingqueue: Int, outgpingstream: Int)
-  private[pgcopy] case class Configuration(server: ServerConfig, pool: PoolConfig, retry: RetryConfig, io: IoConfig)
-
   private[pgcopy] final val config: Config[Configuration] =
     val host = Config.string("host").withDefault("localhost")
     val port = Config.int("port").withDefault(5432)
@@ -108,7 +95,7 @@ object PostgresCopy:
       .nested("server")
     val min = Config.int("min").withDefault(0).validate("Min poolsize must be >= 0")(_ >= 0)
     val max = Config.int("max").withDefault(64).validate("Max poolsize must be >= 1")(_ >= 1)
-    val timeout = Config.duration("timeout").withDefault(90.seconds).validate("Pool timeout must be >= 15 seconds")(_ >= 15.seconds)
+    val timeout = Config.duration("timeout").withDefault(15.minutes).validate("Pool timeout must be >= 90 seconds")(_ >= 90.seconds)
     val pool = (min ++ max ++ timeout).map((mn, mx, tm) => PoolConfig(mn, mx, tm)).nested("pool")
     val base = Config.duration("base").withDefault(100.milliseconds)
     val factor = Config.double("factor").withDefault(1.25d)
@@ -120,3 +107,16 @@ object PostgresCopy:
     val outgoingstream = Config.int("outgoingstream").withDefault(4 * 1024)
     val io = (socketbuffer ++ bytebufinitial ++ incomingqueue ++ outgoingstream).map((s, b, i, o) => IoConfig(s, b, i, o)).nested(("io"))
     (server ++ pool ++ retry ++ io).nested("zio-pgcopy").map((s, p, r, i) => Configuration(s, p, r, i))
+
+private case class ServerConfig(
+    host: String,
+    port: Int,
+    sslmode: ConnectionPool.Ssl.Mode,
+    database: String,
+    user: String,
+    password: String
+)
+private case class PoolConfig(min: Int, max: Int, timeout: Duration)
+private case class RetryConfig(base: Duration, factor: Double, retries: Int)
+private case class IoConfig(sockerbuffer: Int, bytebufinitial: Int, incomingsize: Int, outgoingsize: Int)
+private case class Configuration(server: ServerConfig, pool: PoolConfig, retry: RetryConfig, io: IoConfig)

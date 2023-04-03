@@ -6,9 +6,12 @@ import io.netty.buffer.ByteBufUtil
 
 import scala.annotation.switch
 
-private[pgcopy] trait BackendMessage
+private sealed trait BackendMessage
 
-private[pgcopy] object BackendMessage:
+private object BackendMessage:
+
+  import Codec.*
+
   def apply()(using buf: ByteBuf): BackendMessage =
     val tag = buf.readByte
     val len = buf.readInt - 4
@@ -129,7 +132,7 @@ private[pgcopy] object BackendMessage:
     inline final val Tag = 'd'
     def apply()(using buf: ByteBuf): CopyData =
       if buf.testUtf8("PGCOPY") then buf.readIgnore(19)
-      CopyData(buf.readShort, buf.retain(1))
+      CopyData(buf.readShort, buf.retain(1).nn)
 
   case object CopyDone extends BackendMessage, Decoder[CopyDone.type]:
     inline final val Tag = 'c'

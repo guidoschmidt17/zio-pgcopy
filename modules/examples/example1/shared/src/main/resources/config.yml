@@ -1,6 +1,5 @@
 
 zio-pgcopy:
-
   server:
     host           : localhost
     port           : 5432
@@ -10,8 +9,8 @@ zio-pgcopy:
     password       : banana
 
   pool:
-    min            : 8
-    max            : 64
+    min            : 0
+    max            : 8
     timeout        : 15.minutes
 
   retry:
@@ -22,11 +21,10 @@ zio-pgcopy:
   io:
     socketbuffer   : 8388608
     bytebufinitial : 131072
-    incomingqueue  : 8192
-    outgoingstream : 4096
+    incomingsize   : 8192
+    outgoingsize   : 4096
 
 example1:
-
   copy-in:  
     rows           : 100000
     repeats        : 0

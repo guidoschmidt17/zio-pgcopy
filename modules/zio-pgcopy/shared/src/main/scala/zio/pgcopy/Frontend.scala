@@ -10,16 +10,18 @@ import java.security.MessageDigest
 
 import FrontendMessage.*
 
-private[pgcopy] trait FrontendMessage:
+private sealed trait FrontendMessage:
   val payload: ByteBuf
   protected val buf: ByteBuf = PooledByteBufAllocator.DEFAULT.directBuffer(ByteBufInitialSize)
   protected def lengthPrefixed(i: Int, p: ByteBuf): ByteBuf =
     buf.setInt(i, p.writerIndex - i)
 
-enum Variant:
-  case Portal, Statement
+private object FrontendMessage:
 
-private[pgcopy] object FrontendMessage:
+  import Codec.*
+
+  enum Variant:
+    case Portal, Statement
 
   trait UntaggedFrontendMessage extends FrontendMessage:
     buf.writeInt(Int.MinValue)
@@ -137,6 +139,6 @@ private[pgcopy] object FrontendMessage:
       buf.writeShort(-1)
       lengthPrefixed(buf)
 
-  private[pgcopy] final val Header = "PGCOPY".getBytes.nn ++ Array(0x0a, 0xff, 0x0d, 0x0a, 0x00).map(_.toByte)
+  private final val Header = "PGCOPY".getBytes.nn ++ Array(0x0a, 0xff, 0x0d, 0x0a, 0x00).map(_.toByte)
 
   private[pgcopy] final var ByteBufInitialSize = 8 * 1024

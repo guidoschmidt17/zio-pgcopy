@@ -3,16 +3,17 @@ package pgcopy
 
 import io.netty.buffer.ByteBuf
 
+import java.nio.charset.StandardCharsets.UTF_8
 import java.time.Instant
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import scala.annotation.switch
+import scala.annotation.targetName
 import scala.reflect.ClassTag
 
 trait Decoder[A]:
   def apply()(using ByteBuf): A
-  val typename = s"${this.getClass.getSimpleName.nn.takeWhile(_ != '$')}"
 trait SeqDecoder[A] extends Decoder[Seq[A]]:
   def apply()(using ByteBuf): Seq[A]
 
@@ -26,12 +27,14 @@ trait SeqCodec[A] extends SeqEncoder[A], SeqDecoder[A]
 
 object Codec:
 
-  sealed trait BaseEncoder[A] extends Encoder[A]:
+  import util.*
+
+  protected sealed trait BaseEncoder[A] extends Encoder[A]:
     final lazy val typeoid: Int = Types.get(this).get
-  sealed trait BaseSeqEncoder[A] extends SeqEncoder[A]:
+  protected sealed trait BaseSeqEncoder[A] extends SeqEncoder[A]:
     final lazy val typeoid: Int = Types.get(this).get
-  sealed trait BaseCodec[A] extends Codec[A], BaseEncoder[A]
-  sealed trait BaseSeqCodec[A] extends SeqCodec[A], BaseSeqEncoder[A]
+  protected sealed trait BaseCodec[A] extends Codec[A], BaseEncoder[A]
+  protected sealed trait BaseSeqCodec[A] extends SeqCodec[A], BaseSeqEncoder[A]
 
   private class SeqBuilder[A: ClassTag]:
     def apply(decoder: Decoder[A])(using buf: ByteBuf): Seq[A] =
@@ -236,9 +239,7 @@ object Codec:
     def apply()(using ByteBuf) = SeqBuilder[LocalDate](date)
     def apply(a: Seq[LocalDate])(using ByteBuf) = SeqBuilder[LocalDate](a, date)
 
-  case class IntervalHolder(years: Int, months: Int, days: Int, hours: Int, minutes: Int, seconds: Double)
-
-  object interval extends BaseCodec[IntervalHolder]:
+  object interval extends BaseCodec[Interval]:
     def apply()(using buf: ByteBuf) =
       buf.readInt
       val seclong = buf.readLong
@@ -249,8 +250,8 @@ object Codec:
       val minutes: Int = (sec / 60).toInt - (60 * hours)
       val seconds: Double = sec - (60 * minutes) - (60 * 60 * hours)
       val years: Int = months / 12
-      IntervalHolder(years, months - (12 * years), days, hours, minutes, seconds)
-    def apply(a: IntervalHolder)(using buf: ByteBuf) =
+      Interval(years, months - (12 * years), days, hours, minutes, seconds)
+    def apply(a: Interval)(using buf: ByteBuf) =
       val sec: Double = a.seconds + (60 * a.minutes) + (60 * 60 * a.hours)
       val seclong: Long = (1000000d * sec).toLong
       val months: Int = a.months + (12 * a.years)
@@ -258,9 +259,9 @@ object Codec:
       buf.writeLong(seclong)
       buf.writeInt(a.days)
       buf.writeInt(months)
-  object _interval extends BaseSeqCodec[IntervalHolder]:
-    def apply()(using ByteBuf) = SeqBuilder[IntervalHolder](interval)
-    def apply(a: Seq[IntervalHolder])(using ByteBuf) = SeqBuilder[IntervalHolder](a, interval)
+  object _interval extends BaseSeqCodec[Interval]:
+    def apply()(using ByteBuf) = SeqBuilder[Interval](interval)
+    def apply(a: Seq[Interval])(using ByteBuf) = SeqBuilder[Interval](a, interval)
 
   object bool extends BaseCodec[Boolean]:
     def apply()(using buf: ByteBuf) =
@@ -319,8 +320,36 @@ object Codec:
     _uuid -> 2951
   )
 
-  def fromOid(oid: Int): BaseEncoder[?] | BaseSeqEncoder[?] = Types.find(_._2 == oid).map(_._1).get
+  private def fromOid(oid: Int): BaseEncoder[?] | BaseSeqEncoder[?] = Types.find(_._2 == oid).map(_._1).get
 
-  def nameForOid(oid: Int): String = fromOid(oid).getClass.getSimpleName match
+  private[pgcopy] def nameForOid(oid: Int): String = fromOid(oid).getClass.getSimpleName match
     case n if n.endsWith("$") => n.nn.dropRight(1)
     case n                    => n
+
+  extension (buf: ByteBuf)
+    inline def readUtf8(len: Int): String =
+      String.valueOf(buf.readCharSequence(math.min(len, buf.readableBytes), UTF_8))
+    inline def readUtf8z: String =
+      var i = buf.readerIndex
+      while buf.getByte(i) != 0 do i += 1
+      val res = String.valueOf(buf.readCharSequence(i - buf.readerIndex, UTF_8))
+      buf.readByte
+      res
+    inline def readByteArray(len: Int): Array[Byte] =
+      val arr = Array.ofDim[Byte](math.min(len, buf.readableBytes))
+      buf.readBytes(arr)
+      arr
+    inline def readRemaining: Array[Byte] =
+      buf.readByteArray(buf.readableBytes)
+    inline def readIgnore(len: Int): Unit =
+      buf.readerIndex(buf.readerIndex + len)
+    inline def testUtf8(s: String): Boolean =
+      if buf.readableBytes < s.length then false
+      else s == String.valueOf(buf.getCharSequence(buf.readerIndex, s.length, UTF_8))
+    inline def writeUtf8(s: String): ByteBuf =
+      buf.writeBytes(s.getBytes(UTF_8))
+    inline def writeUtf8z(s: String): ByteBuf =
+      writeUtf8(s)
+      buf.writeByte(0)
+
+inline private given nn_conversion[A]: Conversion[A | Null, A] = _.nn

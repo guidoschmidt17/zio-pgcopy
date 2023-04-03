@@ -3,11 +3,13 @@ package example1
 import io.netty.buffer.ByteBuf
 import zio.Random.*
 import zio.*
-import zio.pgcopy.Codec.*
 import zio.pgcopy.*
 import zio.stream.*
 
 import java.time.OffsetDateTime
+
+import Codec.*
+import util.Uuid
 
 object Event:
   enum Category:
@@ -31,7 +33,7 @@ object Fact:
     for
       ec <- nextIntBounded(4)
       eventid <- nextUUID
-      eventdatalength <- nextIntBetween(3, 30)
+      eventdatalength <- nextIntBetween(5, 100)
       eventdata <- nextBytes(eventdatalength)
       tags = Seq("bla", "blabla")
     yield Fact(null, null, aggregateid, aggregatelatest, Event.Category.fromOrdinal(ec), eventid, eventdatalength, eventdata.toArray, tags)
@@ -56,4 +58,4 @@ object Fact:
 
   final given Decoder[Fact] = new Decoder[Fact]:
     inline def apply()(using ByteBuf): Fact =
-      Fact(null, null, null, int4(), Event.Category.valueOf(text()), uuid(), int4(), bytea(), _text())
+      Fact(int8(), timestamptz(), uuid(), int4(), Event.Category.valueOf(text()), uuid(), int4(), bytea(), _text())
