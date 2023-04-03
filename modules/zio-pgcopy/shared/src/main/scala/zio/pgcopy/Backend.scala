@@ -131,7 +131,7 @@ private object BackendMessage:
   object CopyData extends Decoder[CopyData]:
     inline final val Tag = 'd'
     def apply()(using buf: ByteBuf): CopyData =
-      if buf.testUtf8("PGCOPY") then buf.readIgnore(19)
+      if buf.testUtf8("PGCOPY") then buf.ignore(19)
       CopyData(buf.readShort, buf.retain(1).nn)
 
   case object CopyDone extends BackendMessage, Decoder[CopyDone.type]:

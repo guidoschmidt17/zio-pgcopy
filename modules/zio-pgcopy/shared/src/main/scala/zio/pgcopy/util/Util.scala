@@ -9,11 +9,11 @@ import java.util.UUID
 
 case class Interval(years: Int, months: Int, days: Int, hours: Int, minutes: Int, seconds: Double)
 
-case class Uuid private (uuid: UUID) extends AnyVal:
+case class Uuid private (uuid: UUID):
 
   override def toString = uuid.toString
 
-  inline def toBytes: Array[Byte] =
+  final val toBytes: Array[Byte] =
     val bb = ByteBuffer.wrap(Array.ofDim[Byte](16))
     bb.putLong(uuid.getMostSignificantBits)
     bb.putLong(uuid.getLeastSignificantBits)
@@ -25,10 +25,10 @@ object Uuid:
 
   inline def apply(s: String): Uuid = fromString(s)
 
-  inline def fromString(s: String): Uuid = Uuid(UUID.fromString(s.toLowerCase))
+  inline def fromString(s: String): Uuid = Uuid(UUID.fromString(s))
 
   inline def fromBytes(bytes: Array[Byte]): Uuid =
-    val bb = ByteBuffer.wrap(bytes)
+    val bb = ByteBuffer.wrap(bytes, 0, 16)
     val most = bb.getLong
     val least = bb.getLong
     Uuid(new UUID(most, least))

@@ -24,7 +24,7 @@ case class Fact(
     eventid: Uuid,
     eventdatalength: Int,
     eventdata: Array[Byte],
-    tags: Seq[String]
+    tags: Array[String]
 )
 
 object Fact:
@@ -35,7 +35,7 @@ object Fact:
       eventid <- nextUUID
       eventdatalength <- nextIntBetween(5, 100)
       eventdata <- nextBytes(eventdatalength)
-      tags = Seq("bla", "blabla")
+      tags = Array("bla", "blabla")
     yield Fact(null, null, aggregateid, aggregatelatest, Event.Category.fromOrdinal(ec), eventid, eventdatalength, eventdata.toArray, tags)
 
   def randomFacts(n: Int): UIO[Chunk[Fact]] =
@@ -58,4 +58,5 @@ object Fact:
 
   final given Decoder[Fact] = new Decoder[Fact]:
     inline def apply()(using ByteBuf): Fact =
-      Fact(int8(), timestamptz(), uuid(), int4(), Event.Category.valueOf(text()), uuid(), int4(), bytea(), _text())
+      Fact(null, null, null, int4(), Event.Category.valueOf(text()), uuid(), int4(), bytea(), _text())
+//      Fact(int8(), timestamptz(), uuid(), int4(), Event.Category.valueOf(text()), uuid(), int4(), bytea(), _text())

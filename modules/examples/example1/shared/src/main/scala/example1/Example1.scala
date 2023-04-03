@@ -30,7 +30,8 @@ object Example1 extends ZIOAppDefault:
           _ <- ZIO.scoped(
             copy
               .out[String, Fact](
-                s"select serialid,created,aggregateid,aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags from fact",
+                // s"select serialid,created,aggregateid,aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags from fact",
+                s"select aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags from fact where serialid > 0 order by serialid asc",
                 n
               )
               .flatMap(_.runCount)
@@ -43,10 +44,8 @@ object Example1 extends ZIOAppDefault:
     ZIO
       .service[Example1]
       .provideSome[Scope](Example1.layer, Copy.layer)
-      .flatMap(_.run)
+      .flatMap(_.run.forkDaemon.repeatN(7))
       .catchAllCause(ZIO.logErrorCause(_))
-      .forkDaemon
-      .repeatN(7)
       *> ZIO.sleep(40.seconds)
 
   val run = program

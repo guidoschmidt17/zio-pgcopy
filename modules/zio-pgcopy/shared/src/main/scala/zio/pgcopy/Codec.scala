@@ -14,16 +14,14 @@ import scala.reflect.ClassTag
 
 trait Decoder[A]:
   def apply()(using ByteBuf): A
-trait SeqDecoder[A] extends Decoder[Seq[A]]:
-  def apply()(using ByteBuf): Seq[A]
-
+trait ArrayDecoder[A] extends Decoder[Array[A]]:
+  def apply()(using ByteBuf): Array[A]
 trait Encoder[A]:
   def apply(a: A)(using ByteBuf): Unit
-trait SeqEncoder[A] extends Encoder[Seq[A]]:
-  def apply(aseq: Seq[A])(using ByteBuf): Unit
-
+trait ArrayEncoder[A] extends Encoder[Array[A]]:
+  def apply(a: Array[A])(using ByteBuf): Unit
 trait Codec[A] extends Encoder[A], Decoder[A]
-trait SeqCodec[A] extends SeqEncoder[A], SeqDecoder[A]
+trait ArrayCodec[A] extends ArrayEncoder[A], ArrayDecoder[A]
 
 object Codec:
 
@@ -31,121 +29,112 @@ object Codec:
 
   protected sealed trait BaseEncoder[A] extends Encoder[A]:
     final lazy val typeoid: Int = Types.get(this).get
-  protected sealed trait BaseSeqEncoder[A] extends SeqEncoder[A]:
+  protected sealed trait BaseArrayEncoder[A] extends ArrayEncoder[A]:
     final lazy val typeoid: Int = Types.get(this).get
   protected sealed trait BaseCodec[A] extends Codec[A], BaseEncoder[A]
-  protected sealed trait BaseSeqCodec[A] extends SeqCodec[A], BaseSeqEncoder[A]
+  protected sealed trait BaseArrayCodec[A] extends ArrayCodec[A], BaseArrayEncoder[A]
 
-  private class SeqBuilder[A: ClassTag]:
-    def apply(decoder: Decoder[A])(using buf: ByteBuf): Seq[A] =
-      val blen = buf.readInt
-      val dimensions = buf.readInt
-      val nullallowed = buf.readInt
-      val typeoid = buf.readInt
+  private class ArrayBuilder[A: ClassTag]:
+    def apply(decoder: Decoder[A])(using buf: ByteBuf): Array[A] =
+      buf.ignore(16)
       val len = buf.readInt
-      val usedef = buf.readInt
+      buf.ignoreInt
       val arr = Array.ofDim[A](len)
       Range(0, len).foreach(i => arr.update(i, decoder()))
-      arr.toSeq
-    def apply(aseq: Seq[A], encoder: BaseEncoder[A])(using buf: ByteBuf): Unit =
-      val i = buf.writerIndex
-      val dimensions = 1
-      val nullallowed = 0
-      val typeoid = encoder.typeoid
-      val len = aseq.length
-      val usedef = 0
-      buf.writeInt(-1)
-      buf.writeInt(dimensions)
-      buf.writeInt(nullallowed)
-      buf.writeInt(typeoid)
-      buf.writeInt(len)
-      buf.writeInt(usedef)
-      aseq.foreach(a => encoder(a))
-      val blen = buf.writerIndex - i - 4
-      buf.setInt(i, blen)
+      arr
+    def apply(a: Array[A], encoder: BaseEncoder[A])(using buf: ByteBuf): Unit =
+      val start = buf.writerIndex
+      buf.writeBytes(Array[Byte](0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0), 0, 12)
+      buf.writeInt(encoder.typeoid)
+      buf.writeInt(a.length)
+      buf.writeInt(0)
+      a.foreach(encoder(_))
+      buf.setInt(start, buf.writerIndex - start - 4)
 
-  private object SeqBuilder:
-    def apply[A: ClassTag](decoder: Decoder[A])(using ByteBuf): Seq[A] = new SeqBuilder[A].apply(decoder)
-    def apply[A: ClassTag](aseq: Seq[A], encoder: BaseEncoder[A])(using ByteBuf): Unit = new SeqBuilder[A].apply(aseq, encoder)
+  private object ArrayBuilder:
+    def apply[A: ClassTag](decoder: Decoder[A])(using ByteBuf): Array[A] = new ArrayBuilder[A].apply(decoder)
+    def apply[A: ClassTag](a: Array[A], encoder: BaseEncoder[A])(using ByteBuf): Unit = new ArrayBuilder[A].apply(a, encoder)
 
   object fields extends Codec[Short]:
     def apply()(using buf: ByteBuf) =
       buf.readShort
     def apply(a: Short)(using buf: ByteBuf) =
       buf.writeShort(a)
-
   object int2 extends BaseCodec[Short]:
     def apply()(using buf: ByteBuf) =
-      buf.readInt
+      buf.ignoreInt
       buf.readShort
     def apply(a: Short)(using buf: ByteBuf) =
       buf.writeInt(2)
       buf.writeShort(a)
   object int4 extends BaseCodec[Int]:
     def apply()(using buf: ByteBuf) =
-      buf.readInt
+      buf.ignoreInt
       buf.readInt
     def apply(a: Int)(using buf: ByteBuf) =
       buf.writeInt(4)
       buf.writeInt(a)
   object int8 extends BaseCodec[Long]:
     def apply()(using buf: ByteBuf) =
-      buf.readInt
+      buf.ignoreInt
       buf.readLong
     def apply(a: Long)(using buf: ByteBuf) =
       buf.writeInt(8)
       buf.writeLong(a)
   object float4 extends BaseCodec[Float]:
     def apply()(using buf: ByteBuf) =
-      buf.readInt
+      buf.ignoreInt
       buf.readFloat
     def apply(a: Float)(using buf: ByteBuf) =
       buf.writeInt(4)
       buf.writeFloat(a)
   object float8 extends BaseCodec[Double]:
     def apply()(using buf: ByteBuf) =
-      buf.readInt
+      buf.ignoreInt
       buf.readDouble
     def apply(a: Double)(using buf: ByteBuf) =
       buf.writeInt(8)
       buf.writeDouble(a)
   object numeric extends BaseCodec[BigDecimal]:
-    def apply()(using ByteBuf) = BigDecimal(text())
+    def apply()(using ByteBuf) =
+      BigDecimal(text())
     def apply(a: BigDecimal)(using buf: ByteBuf) =
       buf.writeUtf8z(s"'$a'::numeric")
 
-  object _int2 extends BaseSeqCodec[Short]:
-    def apply()(using ByteBuf) = SeqBuilder[Short](int2)
-    def apply(a: Seq[Short])(using ByteBuf) = SeqBuilder[Short](a, int2)
-  object _int4 extends BaseSeqCodec[Int]:
-    def apply()(using ByteBuf) = SeqBuilder[Int](int4)
-    def apply(a: Seq[Int])(using ByteBuf) = SeqBuilder[Int](a, int4)
-  object _int8 extends BaseSeqCodec[Long]:
-    def apply()(using ByteBuf) = SeqBuilder[Long](int8)
-    def apply(a: Seq[Long])(using ByteBuf) = SeqBuilder[Long](a, int8)
-  object _float4 extends BaseSeqCodec[Float]:
-    def apply()(using ByteBuf) = SeqBuilder[Float](float4)
-    def apply(a: Seq[Float])(using ByteBuf) = SeqBuilder[Float](a, float4)
-  object _float8 extends BaseSeqCodec[Double]:
-    def apply()(using ByteBuf) = SeqBuilder[Double](float8)
-    def apply(a: Seq[Double])(using ByteBuf) = SeqBuilder[Double](a, float8)
-  object _numeric extends BaseSeqCodec[BigDecimal]:
-    def apply()(using ByteBuf) = SeqBuilder[BigDecimal](numeric)
-    def apply(a: Seq[BigDecimal])(using ByteBuf) = SeqBuilder[BigDecimal](a, numeric)
+  object _int2 extends BaseArrayCodec[Short]:
+    def apply()(using ByteBuf) = ArrayBuilder[Short](int2)
+    def apply(a: Array[Short])(using ByteBuf) = ArrayBuilder[Short](a, int2)
+  object _int4 extends BaseArrayCodec[Int]:
+    def apply()(using ByteBuf) = ArrayBuilder[Int](int4)
+    def apply(a: Array[Int])(using ByteBuf) = ArrayBuilder[Int](a, int4)
+  object _int8 extends BaseArrayCodec[Long]:
+    def apply()(using ByteBuf) = ArrayBuilder[Long](int8)
+    def apply(a: Array[Long])(using ByteBuf) = ArrayBuilder[Long](a, int8)
+  object _float4 extends BaseArrayCodec[Float]:
+    def apply()(using ByteBuf) = ArrayBuilder[Float](float4)
+    def apply(a: Array[Float])(using ByteBuf) = ArrayBuilder[Float](a, float4)
+  object _float8 extends BaseArrayCodec[Double]:
+    def apply()(using ByteBuf) = ArrayBuilder[Double](float8)
+    def apply(a: Array[Double])(using ByteBuf) = ArrayBuilder[Double](a, float8)
+  object _numeric extends BaseArrayCodec[BigDecimal]:
+    def apply()(using ByteBuf) = ArrayBuilder[BigDecimal](numeric)
+    def apply(a: Array[BigDecimal])(using ByteBuf) = ArrayBuilder[BigDecimal](a, numeric)
 
   object text extends BaseCodec[String]:
-    def apply()(using buf: ByteBuf) = buf.readUtf8(buf.readInt)
+    def apply()(using buf: ByteBuf) =
+      buf.readUtf8(buf.readInt)
     def apply(a: String)(using buf: ByteBuf) =
       buf.writeInt(a.length)
       buf.writeUtf8(a)
   object varchar extends BaseCodec[String]:
-    def apply()(using buf: ByteBuf) = buf.readUtf8(buf.readInt)
+    def apply()(using buf: ByteBuf) =
+      buf.readUtf8(buf.readInt)
     def apply(a: String)(using buf: ByteBuf) =
       buf.writeInt(a.length)
       buf.writeUtf8(a)
   object char extends BaseCodec[Char]:
     def apply()(using buf: ByteBuf) =
-      buf.readInt
+      buf.ignoreInt
       buf.readByte.toChar
     def apply(a: Char)(using buf: ByteBuf) =
       buf.writeInt(1)
@@ -160,35 +149,38 @@ object Codec:
       buf.writeInt(a.length)
       buf.writeUtf8(a)
 
-  object _text extends BaseSeqCodec[String]:
-    def apply()(using ByteBuf) = SeqBuilder[String](text)
-    def apply(a: Seq[String])(using ByteBuf) = SeqBuilder[String](a, text)
-  object _varchar extends BaseSeqCodec[String]:
-    def apply()(using ByteBuf) = SeqBuilder[String](varchar)
-    def apply(a: Seq[String])(using ByteBuf) = SeqBuilder[String](a, varchar)
-  object _char extends BaseSeqCodec[Char]:
-    def apply()(using ByteBuf) = SeqBuilder[Char](char)
-    def apply(a: Seq[Char])(using ByteBuf) = SeqBuilder[Char](a, char)
-  object _name extends BaseSeqCodec[String]:
-    def apply()(using ByteBuf) = SeqBuilder[String](name)
-    def apply(a: Seq[String])(using ByteBuf) = SeqBuilder[String](a, name)
+  object _text extends BaseArrayCodec[String]:
+    def apply()(using ByteBuf) = ArrayBuilder[String](text)
+    def apply(a: Array[String])(using ByteBuf) = ArrayBuilder[String](a, text)
+  object _varchar extends BaseArrayCodec[String]:
+    def apply()(using ByteBuf) = ArrayBuilder[String](varchar)
+    def apply(a: Array[String])(using ByteBuf) = ArrayBuilder[String](a, varchar)
+  object _char extends BaseArrayCodec[Char]:
+    def apply()(using ByteBuf) = ArrayBuilder[Char](char)
+    def apply(a: Array[Char])(using ByteBuf) = ArrayBuilder[Char](a, char)
+  object _name extends BaseArrayCodec[String]:
+    def apply()(using ByteBuf) = ArrayBuilder[String](name)
+    def apply(a: Array[String])(using ByteBuf) = ArrayBuilder[String](a, name)
 
   object bytea extends BaseCodec[Array[Byte]]:
-    def apply()(using buf: ByteBuf) = buf.readByteArray(buf.readInt)
+    def apply()(using buf: ByteBuf) =
+      buf.readByteArray(buf.readInt)
     def apply(a: Array[Byte])(using buf: ByteBuf) =
       buf.writeInt(a.length)
       buf.writeBytes(a)
-  object _bytea extends BaseSeqCodec[Array[Byte]]:
-    def apply()(using ByteBuf) = SeqBuilder[Array[Byte]](bytea)
-    def apply(a: Seq[Array[Byte]])(using ByteBuf) = SeqBuilder[Array[Byte]](a, bytea)
+  object _bytea extends BaseArrayCodec[Array[Byte]]:
+    def apply()(using ByteBuf) = ArrayBuilder[Array[Byte]](bytea)
+    def apply(a: Array[Array[Byte]])(using ByteBuf) = ArrayBuilder[Array[Byte]](a, bytea)
+
+  inline private final val Epoch = 946684800L
+  inline private final val AdjustMillis = 1000L
+  inline private final val AdjustNanos = 1000000L
+  inline private final val MillisPerDay = 8640000L
+  private final val Utc = ZoneOffset.UTC
 
   object timestamptz extends BaseCodec[OffsetDateTime]:
-    inline private final val Epoch = 946684800L
-    inline private final val AdjustMillis = 1000L
-    inline private final val AdjustNanos = 1000000L
-    private final val Utc = ZoneOffset.UTC
     def apply()(using buf: ByteBuf) =
-      buf.readInt
+      buf.ignoreInt
       val timevalue = buf.readLong
       val seconds: Long = timevalue / AdjustNanos
       val nanos: Long = (timevalue - (seconds * AdjustNanos)) * AdjustMillis
@@ -199,12 +191,8 @@ object Codec:
       buf.writeInt(8)
       buf.writeLong(nanos + seconds)
   object timestamp extends BaseCodec[OffsetDateTime]:
-    inline private final val Epoch = 946684800L
-    inline private final val AdjustMillis = 1000L
-    inline private final val AdjustNanos = 1000000L
-    private final val Utc = ZoneOffset.UTC
     def apply()(using buf: ByteBuf) =
-      buf.readInt
+      buf.ignoreInt
       val timevalue = buf.readLong
       val seconds: Long = timevalue / AdjustNanos
       val nanos: Long = (timevalue - (seconds * AdjustNanos)) * AdjustMillis
@@ -214,19 +202,16 @@ object Codec:
       val nanos: Long = a.getNano / AdjustMillis
       buf.writeInt(8)
       buf.writeLong(nanos + seconds)
-  object _timestamptz extends BaseSeqCodec[OffsetDateTime]:
-    def apply()(using ByteBuf) = SeqBuilder[OffsetDateTime](timestamptz)
-    def apply(a: Seq[OffsetDateTime])(using ByteBuf) = SeqBuilder[OffsetDateTime](a, timestamptz)
-  object _timestamp extends BaseSeqCodec[OffsetDateTime]:
-    def apply()(using ByteBuf) = SeqBuilder[OffsetDateTime](timestamp)
-    def apply(a: Seq[OffsetDateTime])(using ByteBuf) = SeqBuilder[OffsetDateTime](a, timestamp)
+  object _timestamptz extends BaseArrayCodec[OffsetDateTime]:
+    def apply()(using ByteBuf) = ArrayBuilder[OffsetDateTime](timestamptz)
+    def apply(a: Array[OffsetDateTime])(using ByteBuf) = ArrayBuilder[OffsetDateTime](a, timestamptz)
+  object _timestamp extends BaseArrayCodec[OffsetDateTime]:
+    def apply()(using ByteBuf) = ArrayBuilder[OffsetDateTime](timestamp)
+    def apply(a: Array[OffsetDateTime])(using ByteBuf) = ArrayBuilder[OffsetDateTime](a, timestamp)
 
   object date extends BaseCodec[LocalDate]:
-    inline private final val Epoch = 946684800L
-    inline private final val MillisPerDay = 8640000L
-    private final val Utc = ZoneOffset.UTC
     def apply()(using buf: ByteBuf) =
-      buf.readInt
+      buf.ignoreInt
       val days = buf.readInt
       val millis: Long = (days * MillisPerDay) + Epoch
       LocalDate.ofInstant(Instant.ofEpochMilli(millis), Utc)
@@ -235,13 +220,13 @@ object Codec:
       val days: Int = ((epochmillis - Epoch) / MillisPerDay).toInt
       buf.writeInt(4)
       buf.writeInt(days)
-  object _date extends BaseSeqCodec[LocalDate]:
-    def apply()(using ByteBuf) = SeqBuilder[LocalDate](date)
-    def apply(a: Seq[LocalDate])(using ByteBuf) = SeqBuilder[LocalDate](a, date)
+  object _date extends BaseArrayCodec[LocalDate]:
+    def apply()(using ByteBuf) = ArrayBuilder[LocalDate](date)
+    def apply(a: Array[LocalDate])(using ByteBuf) = ArrayBuilder[LocalDate](a, date)
 
   object interval extends BaseCodec[Interval]:
     def apply()(using buf: ByteBuf) =
-      buf.readInt
+      buf.ignoreInt
       val seclong = buf.readLong
       val days = buf.readInt
       val months = buf.readInt
@@ -259,31 +244,34 @@ object Codec:
       buf.writeLong(seclong)
       buf.writeInt(a.days)
       buf.writeInt(months)
-  object _interval extends BaseSeqCodec[Interval]:
-    def apply()(using ByteBuf) = SeqBuilder[Interval](interval)
-    def apply(a: Seq[Interval])(using ByteBuf) = SeqBuilder[Interval](a, interval)
+  object _interval extends BaseArrayCodec[Interval]:
+    def apply()(using ByteBuf) = ArrayBuilder[Interval](interval)
+    def apply(a: Array[Interval])(using ByteBuf) = ArrayBuilder[Interval](a, interval)
 
   object bool extends BaseCodec[Boolean]:
     def apply()(using buf: ByteBuf) =
-      buf.readInt
+      buf.ignoreInt
       buf.readByte == 1
     def apply(a: Boolean)(using buf: ByteBuf) =
-      buf.writeInt(1)
-      buf.writeByte(if a then 1 else 0)
-  object _bool extends BaseSeqCodec[Boolean]:
-    def apply()(using ByteBuf) = SeqBuilder[Boolean](bool)
-    def apply(a: Seq[Boolean])(using ByteBuf) = SeqBuilder[Boolean](a, bool)
+      val f = Array[Byte](0, 0, 0, 1, 0)
+      val t = Array[Byte](0, 0, 0, 1, 1)
+      buf.writeBytes(if a then t else f, 0, 5)
+  object _bool extends BaseArrayCodec[Boolean]:
+    def apply()(using ByteBuf) = ArrayBuilder[Boolean](bool)
+    def apply(a: Array[Boolean])(using ByteBuf) = ArrayBuilder[Boolean](a, bool)
 
   object uuid extends BaseCodec[Uuid]:
-    def apply()(using buf: ByteBuf) = Uuid.fromBytes(buf.readByteArray(buf.readInt))
+    def apply()(using buf: ByteBuf) =
+      buf.ignoreInt
+      Uuid.fromBytes(buf.readByteArray(16))
     def apply(a: Uuid)(using buf: ByteBuf) =
       buf.writeInt(16)
-      buf.writeBytes(a.toBytes)
-  object _uuid extends BaseSeqCodec[Uuid]:
-    def apply()(using ByteBuf) = SeqBuilder[Uuid](uuid)
-    def apply(a: Seq[Uuid])(using ByteBuf) = SeqBuilder[Uuid](a, uuid)
+      buf.writeBytes(a.toBytes, 0, 16)
+  object _uuid extends BaseArrayCodec[Uuid]:
+    def apply()(using ByteBuf) = ArrayBuilder[Uuid](uuid)
+    def apply(a: Array[Uuid])(using ByteBuf) = ArrayBuilder[Uuid](a, uuid)
 
-  final lazy val Types: Map[BaseEncoder[?] | BaseSeqEncoder[?], Int] = Map(
+  final lazy val Types: Map[BaseEncoder[?] | BaseArrayEncoder[?], Int] = Map(
     bool -> 16,
     bytea -> 17,
     char -> 18,
@@ -320,15 +308,19 @@ object Codec:
     _uuid -> 2951
   )
 
-  private def fromOid(oid: Int): BaseEncoder[?] | BaseSeqEncoder[?] = Types.find(_._2 == oid).map(_._1).get
+  private def fromOid(oid: Int): BaseEncoder[?] | BaseArrayEncoder[?] = Types.find(_._2 == oid).map(_._1).get
 
   private[pgcopy] def nameForOid(oid: Int): String = fromOid(oid).getClass.getSimpleName match
     case n if n.endsWith("$") => n.nn.dropRight(1)
     case n                    => n
 
   extension (buf: ByteBuf)
+    inline def ignore(len: Int): Unit =
+      buf.readerIndex(buf.readerIndex + len)
+    inline def ignoreInt: Unit =
+      buf.readerIndex(buf.readerIndex + 4)
     inline def readUtf8(len: Int): String =
-      String.valueOf(buf.readCharSequence(math.min(len, buf.readableBytes), UTF_8))
+      String.valueOf(buf.readCharSequence(len, UTF_8))
     inline def readUtf8z: String =
       var i = buf.readerIndex
       while buf.getByte(i) != 0 do i += 1
@@ -336,13 +328,11 @@ object Codec:
       buf.readByte
       res
     inline def readByteArray(len: Int): Array[Byte] =
-      val arr = Array.ofDim[Byte](math.min(len, buf.readableBytes))
+      val arr = Array.ofDim[Byte](len)
       buf.readBytes(arr)
       arr
     inline def readRemaining: Array[Byte] =
       buf.readByteArray(buf.readableBytes)
-    inline def readIgnore(len: Int): Unit =
-      buf.readerIndex(buf.readerIndex + len)
     inline def testUtf8(s: String): Boolean =
       if buf.readableBytes < s.length then false
       else s == String.valueOf(buf.getCharSequence(buf.readerIndex, s.length, UTF_8))
