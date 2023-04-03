@@ -253,9 +253,9 @@ object Codec:
       buf.ignoreInt
       buf.readByte == 1
     def apply(a: Boolean)(using buf: ByteBuf) =
-      val f = Array[Byte](0, 0, 0, 1, 0)
-      val t = Array[Byte](0, 0, 0, 1, 1)
-      buf.writeBytes(if a then t else f, 0, 5)
+      val F = Array[Byte](0, 0, 0, 1, 0)
+      val T = Array[Byte](0, 0, 0, 1, 1)
+      buf.writeBytes(if a then T else F, 0, 5)
   object _bool extends BaseArrayCodec[Boolean]:
     def apply()(using ByteBuf) = ArrayBuilder[Boolean](bool)
     def apply(a: Array[Boolean])(using ByteBuf) = ArrayBuilder[Boolean](a, bool)
