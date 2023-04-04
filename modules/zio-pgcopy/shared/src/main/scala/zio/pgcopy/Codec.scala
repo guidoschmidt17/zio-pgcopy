@@ -24,7 +24,7 @@ trait ArrayCodec[A] extends ArrayEncoder[A], ArrayDecoder[A]
 
 object Codec:
 
-  import util.*
+  import Util.*
 
   protected sealed trait BaseEncoder[A] extends Encoder[A]:
     final lazy val typeoid: Int = Types.get(this).get
@@ -35,7 +35,7 @@ object Codec:
 
   private class ArrayBuilder[A: ClassTag]:
     def apply(decoder: Decoder[A])(using buf: ByteBuf): Array[A] =
-      buf.ignore(16)
+      buf.ignoreArrayHeader
       val len = buf.readInt
       buf.ignoreInt
       val arr = Array.ofDim[A](len)
@@ -121,21 +121,12 @@ object Codec:
     def apply()(using buf: ByteBuf) =
       buf.readUtf8(buf.readInt)
     def apply(a: String)(using buf: ByteBuf) =
-      buf.writeInt(a.length)
-      buf.writeUtf8(a)
+      buf.writeText(a)
   object varchar extends BaseCodec[String]:
     def apply()(using buf: ByteBuf) =
       buf.readUtf8(buf.readInt)
     def apply(a: String)(using buf: ByteBuf) =
-      buf.writeInt(a.length)
-      buf.writeUtf8(a)
-  object char extends BaseCodec[Char]:
-    def apply()(using buf: ByteBuf) =
-      buf.ignoreInt
-      buf.readByte.toChar
-    def apply(a: Char)(using buf: ByteBuf) =
-      buf.writeInt(1)
-      buf.writeByte(a.toByte)
+      buf.writeText(a)
   object name extends BaseCodec[String]:
     def apply()(using buf: ByteBuf) =
       val len = buf.readInt
@@ -143,8 +134,14 @@ object Codec:
       buf.readUtf8(len)
     def apply(a: String)(using buf: ByteBuf) =
       assert(a.length < 64, s"name.maxlength (63) exceeded: ${a.length}} $a")
-      buf.writeInt(a.length)
-      buf.writeUtf8(a)
+      buf.writeText(a)
+  object char extends BaseCodec[Char]:
+    def apply()(using buf: ByteBuf) =
+      buf.ignoreInt
+      buf.readByte.toChar
+    def apply(a: Char)(using buf: ByteBuf) =
+      buf.writeInt(1)
+      buf.writeByte(a.toByte)
 
   object _text extends BaseArrayCodec[String]:
     def apply()(using ByteBuf) = ArrayBuilder[String](text)
@@ -163,8 +160,9 @@ object Codec:
     def apply()(using buf: ByteBuf) =
       buf.readByteArray(buf.readInt)
     def apply(a: Array[Byte])(using buf: ByteBuf) =
-      buf.writeInt(a.length)
-      buf.writeBytes(a)
+      val len = a.length
+      buf.writeInt(len)
+      buf.writeBytes(a, 0, len)
   object _bytea extends BaseArrayCodec[Array[Byte]]:
     def apply()(using ByteBuf) = ArrayBuilder[Array[Byte]](bytea)
     def apply(a: Array[Array[Byte]])(using ByteBuf) = ArrayBuilder[Array[Byte]](a, bytea)
@@ -173,7 +171,7 @@ object Codec:
   inline private final val AdjustMillis = 1000L
   inline private final val AdjustNanos = 1000000L
   inline private final val MillisPerDay = 8640000L
-  private final val Utc = ZoneOffset.UTC
+  inline private final def Utc = ZoneOffset.UTC
 
   object timestamptz extends BaseCodec[OffsetDateTime]:
     def apply()(using buf: ByteBuf) =
@@ -250,8 +248,8 @@ object Codec:
       buf.ignoreInt
       buf.readByte == 1
     def apply(a: Boolean)(using buf: ByteBuf) =
-      val F = Array[Byte](0, 0, 0, 1, 0)
       val T = Array[Byte](0, 0, 0, 1, 1)
+      val F = Array[Byte](0, 0, 0, 1, 0)
       buf.writeBytes(if a then T else F, 0, 5)
   object _bool extends BaseArrayCodec[Boolean]:
     def apply()(using ByteBuf) = ArrayBuilder[Boolean](bool)
@@ -260,10 +258,10 @@ object Codec:
   object uuid extends BaseCodec[Uuid]:
     def apply()(using buf: ByteBuf) =
       buf.ignoreInt
-      Uuid.fromBytes(buf.readByteArray(16))
+      Uuid.read(buf)
     def apply(a: Uuid)(using buf: ByteBuf) =
       buf.writeInt(16)
-      buf.writeBytes(a.toBytes, 0, 16)
+      a.write(buf)
   object _uuid extends BaseArrayCodec[Uuid]:
     def apply()(using ByteBuf) = ArrayBuilder[Uuid](uuid)
     def apply(a: Array[Uuid])(using ByteBuf) = ArrayBuilder[Uuid](a, uuid)
@@ -312,31 +310,35 @@ object Codec:
     case n                    => n
 
   extension (buf: ByteBuf)
-    inline def ignore(len: Int): Unit =
-      buf.readerIndex(buf.readerIndex + len)
+    inline def ignoreCopyOutHeader: Unit =
+      buf.readerIndex(buf.readerIndex + 19)
+    inline def ignoreByte: Unit =
+      buf.readerIndex(buf.readerIndex + 1)
     inline def ignoreInt: Unit =
       buf.readerIndex(buf.readerIndex + 4)
+    inline def ignoreArrayHeader: Unit =
+      buf.readerIndex(buf.readerIndex + 16)
     inline def readUtf8(len: Int): String =
       String.valueOf(buf.readCharSequence(len, UTF_8))
     inline def readUtf8z: String =
       var i = buf.readerIndex
       while buf.getByte(i) != 0 do i += 1
       val res = String.valueOf(buf.readCharSequence(i - buf.readerIndex, UTF_8))
-      buf.readByte
+      buf.ignoreByte
       res
     inline def readByteArray(len: Int): Array[Byte] =
       val arr = Array.ofDim[Byte](len)
-      buf.readBytes(arr)
+      buf.readBytes(arr, 0, len)
       arr
     inline def readRemaining: Array[Byte] =
       buf.readByteArray(buf.readableBytes)
-    inline def testUtf8(s: String): Boolean =
-      if buf.readableBytes < s.length then false
-      else s == String.valueOf(buf.getCharSequence(buf.readerIndex, s.length, UTF_8))
-    inline def writeUtf8(s: String): ByteBuf =
-      buf.writeBytes(s.getBytes(UTF_8))
     inline def writeUtf8z(s: String): ByteBuf =
-      writeUtf8(s)
+      buf.writeBytes(s.getBytes(UTF_8))
       buf.writeByte(0)
+    inline def writeText(s: String): ByteBuf =
+      val bytes = s.getBytes(UTF_8)
+      val len = bytes.length
+      buf.writeInt(len)
+      buf.writeBytes(bytes, 0, len)
 
 inline private given nn_conversion[A]: Conversion[A | Null, A] = _.nn

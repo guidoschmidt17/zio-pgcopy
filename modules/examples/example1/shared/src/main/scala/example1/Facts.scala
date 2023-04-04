@@ -9,7 +9,7 @@ import zio.stream.*
 import java.time.OffsetDateTime
 
 import Codec.*
-import util.Uuid
+import Util.*
 
 object Event:
   enum Category:
@@ -44,8 +44,8 @@ object Fact:
       facts <- ZIO.foreach(Range(0, n))(aggregatelatest => randomFact(aggregateid, aggregatelatest))
     yield Chunk.fromIterable(facts)
 
-  final given Encoder[Fact] = new Encoder[Fact]:
-    inline def apply(a: Fact)(using ByteBuf): Unit =
+  given Encoder[Fact] = new Encoder[Fact]:
+    def apply(a: Fact)(using ByteBuf): Unit =
       fields(7)
       import a.*
       uuid(aggregateid)
@@ -56,7 +56,7 @@ object Fact:
       bytea(eventdata)
       _text(tags)
 
-  final given Decoder[Fact] = new Decoder[Fact]:
-    inline def apply()(using ByteBuf): Fact =
+  given Decoder[Fact] = new Decoder[Fact]:
+    def apply()(using ByteBuf): Fact =
+      // Fact(int8(), timestamptz(), uuid(), int4(), Event.Category.valueOf(text()), uuid(), int4(), bytea(), _text())
       Fact(null, null, null, int4(), Event.Category.valueOf(text()), uuid(), int4(), bytea(), _text())
-//      Fact(int8(), timestamptz(), uuid(), int4(), Event.Category.valueOf(text()), uuid(), int4(), bytea(), _text())

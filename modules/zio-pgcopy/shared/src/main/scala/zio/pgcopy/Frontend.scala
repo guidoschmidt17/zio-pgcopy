@@ -127,18 +127,16 @@ private object FrontendMessage:
       buf.writeUtf8z(reason)
       lengthPrefixed(buf)
 
-  case class CopyData[A](rows: Chunk[A], rowsizehint: Int = 0)(using encoder: Encoder[A]) extends TaggedFrontendMessage('d'):
+  case class CopyData[A](rows: Chunk[A], rowsizehint: Int)(using encoder: Encoder[A]) extends TaggedFrontendMessage('d'):
     override def toString = s"CopyOut(${rows.size})"
     val payload =
-      given gbuf: ByteBuf = buf
       if rowsizehint > 0 then buf.ensureWritable(math.max(rowsizehint, 128) * rows.size)
-      buf.writeBytes(Header)
-      buf.writeInt(0)
-      buf.writeInt(0)
+      given ByteBuf = buf
+      buf.writeBytes(Header, 0, 19)
       rows.foreach(encoder(_))
       buf.writeShort(-1)
       lengthPrefixed(buf)
 
-  private final val Header = "PGCOPY".getBytes.nn ++ Array(0x0a, 0xff, 0x0d, 0x0a, 0x00).map(_.toByte)
+  private final val Header: Array[Byte] = "PGCOPY".getBytes.nn ++ Array(0x0a, 0xff, 0x0d, 0x0a, 0, 0, 0, 0, 0, 0, 0, 0, 0).map(_.toByte)
 
   private[pgcopy] final var ByteBufInitialSize = 8 * 1024

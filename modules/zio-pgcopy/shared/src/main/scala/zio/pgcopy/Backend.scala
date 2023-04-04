@@ -12,36 +12,33 @@ private object BackendMessage:
 
   import Codec.*
 
-  private final var firstCopyData = false
-
   def apply()(using buf: ByteBuf): BackendMessage =
-    val tag = buf.readByte
+    val tag = buf.readByte.toChar
     val len = buf.readInt - 4
     (tag: @switch) match
-      case CopyData.Tag if firstCopyData => firstCopyData = false; CopyDataWithHeader()
-      case CopyData.Tag if len == 2      => CopyDataFooter()
-      case CopyData.Tag                  => CopyData()
-      case DataRow.Tag                   => DataRow()
-      case AuthenticationResponse.Tag    => AuthenticationResponse()
-      case ParameterStatus.Tag           => ParameterStatus()
-      case BackendKeyData.Tag            => BackendKeyData()
-      case ReadyForQuery.Tag             => ReadyForQuery()
-      case CopyOutResponse.Tag           => firstCopyData = true; CopyOutResponse()
-      case CopyInResponse.Tag            => CopyInResponse()
-      case CopyDone.Tag                  => CopyDone()
-      case NoData.Tag                    => NoData()
-      case CommandComplete.Tag           => CommandComplete()
-      case EmptyQueryRespponse.Tag       => EmptyQueryRespponse()
-      case ParseComplete.Tag             => ParseComplete()
-      case BindComplete.Tag              => BindComplete()
-      case CloseComplete.Tag             => CloseComplete()
-      case ParameterDescription.Tag      => ParameterDescription()
-      case RowDescription.Tag            => RowDescription()
-      case ErrorResponse.Tag             => ErrorResponse()
-      case _                             => UnhandledMessage(tag, len)
+      case CopyData.Tag if len > 2    => CopyData()
+      case CopyData.Tag               => CopyDataFooter()
+      case DataRow.Tag                => DataRow()
+      case AuthenticationResponse.Tag => AuthenticationResponse()
+      case ParameterStatus.Tag        => ParameterStatus()
+      case BackendKeyData.Tag         => BackendKeyData()
+      case ReadyForQuery.Tag          => ReadyForQuery()
+      case CopyOutResponse.Tag        => CopyOutResponse()
+      case CopyInResponse.Tag         => CopyInResponse()
+      case CopyDone.Tag               => CopyDone()
+      case NoData.Tag                 => NoData()
+      case CommandComplete.Tag        => CommandComplete()
+      case EmptyQueryRespponse.Tag    => EmptyQueryRespponse()
+      case ParseComplete.Tag          => ParseComplete()
+      case BindComplete.Tag           => BindComplete()
+      case CloseComplete.Tag          => CloseComplete()
+      case ParameterDescription.Tag   => ParameterDescription()
+      case RowDescription.Tag         => RowDescription()
+      case ErrorResponse.Tag          => ErrorResponse()
+      case _                          => UnhandledMessage(tag, len)
 
-  case class UnhandledMessage(tag: Byte, len: Int)(using buf: ByteBuf) extends BackendMessage:
-    override def toString = s"UnhandledMessage(${tag.toChar} $len ${ByteBufUtil.hexDump(buf)})"
+  case class UnhandledMessage(tag: Char, len: Int)(using buf: ByteBuf) extends BackendMessage:
+    override def toString = s"UnhandledMessage($tag $len ${ByteBufUtil.hexDump(buf)})"
 
   trait AuthenticationResponse extends BackendMessage
   object AuthenticationResponse extends Decoder[AuthenticationResponse]:
@@ -129,13 +126,6 @@ private object BackendMessage:
 
   case object CopyDataFooter extends BackendMessage, Decoder[CopyDataFooter.type]:
     def apply()(using ByteBuf) = this
-
-  case class CopyDataWithHeader(fields: Short, data: ByteBuf)(using ByteBuf) extends BackendMessage
-  object CopyDataWithHeader extends Decoder[CopyDataWithHeader]:
-    inline final val Tag = 'd'
-    def apply()(using buf: ByteBuf) =
-      buf.ignore(19)
-      CopyDataWithHeader(buf.readShort, buf.retain(1).nn)
 
   case class CopyData(fields: Short, data: ByteBuf)(using ByteBuf) extends BackendMessage
   object CopyData extends Decoder[CopyData]:

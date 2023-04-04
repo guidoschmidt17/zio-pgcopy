@@ -13,32 +13,36 @@ object Example1 extends ZIOAppDefault:
 
   lazy val layer = ZLayer.fromFunction(make)
 
-  inline private given makeError: MakeError[String] = (a: Any) => a.toString
+  inline private given MakeError[String] = _.toString
 
   private def make(copy: Copy) =
     new Example1:
       def run =
         import Fact.*
         val n = 100000
-        val loop = for
-          s <- Random.nextIntBetween(1, 500)
-          _ <- ZIO.sleep(s.milliseconds)
-          facts <- randomFacts(n)
-          _ <- copy
-            .in(s"fact (aggregateid,aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags)", ZStream.fromChunk(facts))
-            .measured(s"copyIn")
-          _ <- ZIO.scoped(
-            copy
-              .out[String, Fact](
-                // s"select serialid,created,aggregateid,aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags from fact",
-                s"select aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags from fact where serialid > 0 order by serialid asc",
-                n
+        val loop =
+          for
+            s <- Random.nextIntBetween(1, 500)
+            _ <- ZIO.sleep(s.milliseconds)
+            facts <- randomFacts(n)
+            _ <- copy
+              .in(
+                s"fact (aggregateid,aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags)",
+                ZStream.fromChunk(facts)
               )
-              .flatMap(_.runCount)
-              .measured(s"copyOut")
-          )
-        yield ()
-        loop.repeatN(9)
+              .measured(s"copyIn")
+            _ <- ZIO.scoped(
+              copy
+                .out[String, Fact](
+                  // s"select serialid,created,aggregateid,aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags from fact",
+                  s"select aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags from fact where serialid > 0 order by serialid asc",
+                  n
+                )
+                .flatMap(_.runCount)
+                .measured(s"copyOut")
+            )
+          yield ()
+        loop.repeatN(19)
 
   val program =
     ZIO
@@ -46,7 +50,7 @@ object Example1 extends ZIOAppDefault:
       .provideSome[Scope](Example1.layer, Copy.layer)
       .flatMap(_.run.forkDaemon.repeatN(7))
       .catchAllCause(ZIO.logErrorCause(_))
-      *> ZIO.sleep(40.seconds)
+      *> ZIO.sleep(70.seconds)
 
   val run = program
     .withConfigProvider(ConfigProvider.defaultProvider.orElse(fromYamlString(readResourceFile("config.yml"))))

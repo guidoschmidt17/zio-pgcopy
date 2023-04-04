@@ -30,6 +30,7 @@ import FrontendMessage.*
 import ConnectionPool.*
 import Connection.Status
 import Status.*
+import Codec.*
 
 private case class Connection[E: MakeError](
     private val future: ChannelFuture,
@@ -117,22 +118,23 @@ private case class Connection[E: MakeError](
 
   private def handleCopyOut[A: Decoder](message: BackendMessage)(using makeError: MakeError[E]): Take[E, A] =
     import BackendMessage.*
-    def decode(data: ByteBuf)(using decoder: Decoder[A]) =
-      given gbuf: ByteBuf = data
+    inline def decode(data: ByteBuf)(using decoder: Decoder[A]) =
+      given ByteBuf = data
       try Take.single(decoder())
       finally data.release(1)
     message match
-      case CopyData(_, data)                              => decode(data)
-      case CopyDataWithHeader(_, data)                    => decode(data)
+      case CopyData(_, data) if isNotHeader               => decode(data)
+      case CopyData(_, data)                              => data.ignoreCopyOutHeader; isNotHeader = true; decode(data)
       case CopyDataFooter | CopyDone | CommandComplete(_) => Take.chunk(Chunk.empty)
       case ReadyForQuery(i) if i == 'I'                   => Take.end
       case _                                              => Take.fail(makeError(message))
 
   private def handleMessage(message: BackendMessage)(using makeError: MakeError[E]): IO[E, Unit] =
-    import config.server.*
-    if !message.isInstanceOf[BackendMessage.CopyData] then println(s"$message")
+    import config.server.user
+    import config.server.password
+    // if !message.isInstanceOf[BackendMessage.CopyData] then println(s"$message")
     message match
-      case CopyOutResponse(_, _, _)         => setStatus(CopyingOut)
+      case CopyOutResponse(_, _, _)         => isNotHeader = false; setStatus(CopyingOut)
       case CopyInResponse(_, _, _)          => setStatus(CopyingIn)
       case CommandComplete(_)               => setStatus(CommandCommpleted)
       case CloseComplete                    => setStatus(Prepared)
@@ -191,6 +193,7 @@ private case class Connection[E: MakeError](
   private final var indicator = 0.toChar
   private final var scramsession: ScramSession | Null = null
   private final var scramclientfinal: ScramSession#ClientFinalProcessor | Null = null
+  private final var isNotHeader = true
 
 private object Connection:
 
@@ -295,7 +298,7 @@ private object ConnectionPool:
   private final class ProtocolHandler[E](connection: Connection[E]) extends SimpleChannelInboundHandler[ByteBuf]:
 
     override def channelRead0(ctx: ChannelHandlerContext, buf: ByteBuf): Unit =
-      given gbuf: ByteBuf = buf
+      given ByteBuf = buf
       Unsafe.unsafely(Runtime.default.unsafe.run(connection.handle(BackendMessage())))
 
     override def channelInactive(ctx: ChannelHandlerContext): Unit =
