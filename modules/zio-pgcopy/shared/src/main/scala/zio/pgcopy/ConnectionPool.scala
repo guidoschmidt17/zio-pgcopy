@@ -122,14 +122,15 @@ private case class Connection[E: MakeError](
       try Take.single(decoder())
       finally data.release(1)
     message match
-      case CopyData(fields, data)                         => decode(data)
+      case CopyData(_, data)                              => decode(data)
+      case CopyDataWithHeader(_, data)                    => decode(data)
       case CopyDataFooter | CopyDone | CommandComplete(_) => Take.chunk(Chunk.empty)
       case ReadyForQuery(i) if i == 'I'                   => Take.end
       case _                                              => Take.fail(makeError(message))
 
   private def handleMessage(message: BackendMessage)(using makeError: MakeError[E]): IO[E, Unit] =
     import config.server.*
-    // if !message.isInstanceOf[BackendMessage.CopyData] then println(s"$message")
+    if !message.isInstanceOf[BackendMessage.CopyData] then println(s"$message")
     message match
       case CopyOutResponse(_, _, _)         => setStatus(CopyingOut)
       case CopyInResponse(_, _, _)          => setStatus(CopyingIn)
