@@ -9,7 +9,7 @@ zio-pgcopy:
     password       : banana
 
   pool:
-    min            : 0
+    min            : 1
     max            : 8
     timeout        : 15.minutes
 
@@ -19,8 +19,9 @@ zio-pgcopy:
     retries        : 25
 
   io:
-    socketbuffer   : 8388608
-    bytebufinitial : 131072
+    so_sndbuf      : 32768 
+    so_rcvbuf      : 32768
+    bytebufsize    : 8388608
     incomingsize   : 8192
     outgoingsize   : 4096
 

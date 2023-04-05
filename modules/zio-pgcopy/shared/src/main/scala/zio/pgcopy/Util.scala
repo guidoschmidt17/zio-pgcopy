@@ -20,11 +20,19 @@ object Util:
 
   object Uuid:
 
-    inline def read(buf: ByteBuf) =
-      Uuid(new UUID(buf.readLong, buf.readLong))
+    inline def read(buf: ByteBuf) = Uuid(new UUID(buf.readLong, buf.readLong))
 
     inline def nextUuid: UIO[Uuid] = Random.nextUUID.flatMap(uuid => ZIO.succeed(Uuid(uuid)))
 
     inline given Conversion[Uuid, UUID] = _.uuid
 
     inline given Conversion[UUID, Uuid] = Uuid(_)
+
+  inline final def ceilPower2(i: Int): Int =
+    var x = i - 1
+    x |= x >> 1
+    x |= x >> 2
+    x |= x >> 4
+    x |= x >> 8
+    x |= x >> 16
+    x + 1

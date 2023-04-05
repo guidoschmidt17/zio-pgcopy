@@ -122,6 +122,8 @@ object Codec:
       buf.readUtf8(buf.readInt)
     def apply(a: String)(using buf: ByteBuf) =
       buf.writeText(a)
+    def apply(a: Any)(using buf: ByteBuf) =
+      buf.writeText(a.toString)
   object varchar extends BaseCodec[String]:
     def apply()(using buf: ByteBuf) =
       buf.readUtf8(buf.readInt)
@@ -303,7 +305,7 @@ object Codec:
     _uuid -> 2951
   )
 
-  private def fromOid(oid: Int): BaseEncoder[?] | BaseArrayEncoder[?] = Types.find(_._2 == oid).map(_._1).get
+  private def fromOid(oid: Int): BaseEncoder[?] | BaseArrayEncoder[?] = Types.find(_._2 == oid).map(_._1).getOrElse(text)
 
   private[pgcopy] def nameForOid(oid: Int): String = fromOid(oid).getClass.getSimpleName match
     case n if n.endsWith("$") => n.nn.dropRight(1)

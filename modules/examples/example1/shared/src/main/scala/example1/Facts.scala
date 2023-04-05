@@ -50,7 +50,7 @@ object Fact:
       import a.*
       uuid(aggregateid)
       int4(aggregatelatest)
-      text(eventcategory.toString)
+      text(eventcategory)
       uuid(eventid)
       int4(eventdatalength)
       bytea(eventdata)
@@ -60,3 +60,5 @@ object Fact:
     def apply()(using ByteBuf): Fact =
       // Fact(int8(), timestamptz(), uuid(), int4(), Event.Category.valueOf(text()), uuid(), int4(), bytea(), _text())
       Fact(null, null, null, int4(), Event.Category.valueOf(text()), uuid(), int4(), bytea(), _text())
+
+  val xxx = int8 *: timestamptz *: EmptyTuple

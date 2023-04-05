@@ -4,15 +4,17 @@ package pgcopy
 import zio.*
 import zio.stream.*
 
+import scala.deriving.*
+
 trait Copy:
 
   import Copy.MakeError
 
-  def in[E: MakeError, A: Encoder](insert: String, rows: ZStream[Any, E, A], sizeHintPerRow: Int = 200): IO[E, Unit]
+  def in[E: MakeError, A: Encoder](insert: String, rows: ZStream[Any, E, A]): IO[E, Unit]
 
   def out[E: MakeError, A: Decoder](select: String, limit: Long = Long.MaxValue): ZIO[Scope, E, ZStream[Any, E, Chunk[A]]]
 
-  protected def describeCopyOut[E: MakeError, A](select: String): IO[E, Unit]
+  def describe[E: MakeError, A](select: String): IO[E, Unit]
 
 object Copy:
 
@@ -24,16 +26,17 @@ object Copy:
     for
       pool <- ConnectionPool.make
       cfg <- ZIO.config(config)
+      _ <- ZIO.debug(cfg)
     yield make(pool, cfg)
 
   private def make[E: MakeError](pool: ConnectionPool[E], config: Configuration) = new Copy:
 
-    FrontendMessage.ByteBufInitialSize = config.io.bytebufinitial
+    FrontendMessage.ByteBufInitialSize = config.io.bytebufsize
 
-    def in[E: MakeError, A: Encoder](insert: String, instream: ZStream[Any, E, A], sizeHintPerRow: Int) =
+    def in[E: MakeError, A: Encoder](insert: String, instream: ZStream[Any, E, A]) =
       inline def copy(rows: Chunk[A])(using makeError: MakeError[E]) =
         ZIO
-          .scoped(pool.get.flatMap(_.copyIn(insert, rows, sizeHintPerRow)))
+          .scoped(pool.get.flatMap(_.copyIn(insert, rows)))
           .catchAllDefect(ZIO.fail(_))
           .retry(pool.RetrySchedule)
           .catchAll(e => ZIO.fail(makeError(e)))
@@ -64,21 +67,12 @@ object Copy:
           .forkScoped
       yield outstream
 
-    def describeCopyOut[E: MakeError, A](select: String) =
+    def describe[E: MakeError, A](select: String) =
       inline def prepare(using makeError: MakeError[E]) =
         ZIO
-          .scoped(pool.get.flatMap(_.prepare(select)))
+          .scoped(pool.get.flatMap(_.describe(select)))
           .catchAll(e => ZIO.fail(makeError(e)))
       prepare
-
-    private def copyInChunk[E: MakeError, A: Encoder](insert: String, rows: Chunk[A], sizeHintPerRow: Int) =
-      inline def copy(using makeError: MakeError[E]) =
-        ZIO
-          .scoped(pool.get.flatMap(_.copyIn(insert, rows, sizeHintPerRow)))
-          .catchAllDefect(ZIO.fail(_))
-          .retryN(1)
-          .catchAll(e => ZIO.fail(makeError(e)))
-      copy
 
   private[pgcopy] final val config: Config[Configuration] =
     val host = Config.string("host").withDefault("localhost")
@@ -87,26 +81,35 @@ object Copy:
       .string("sslmode")
       .withDefault("disable")
       .validate("sslmode must be one of [disable, trust, runtime]")(s => Set("disable", "trust", "runtime").contains(s.toLowerCase))
+      .map(_.toLowerCase.nn)
+      .map(_.capitalize)
+      .map(ConnectionPool.Ssl.Mode.valueOf(_))
     val database = Config.string("database").withDefault("world")
     val user = Config.string("user").withDefault("jimmy")
     val password = Config.string("password").withDefault("banana")
-    val server = (host ++ port ++ sslmode ++ database ++ user ++ password)
-      .map((h, p, s, d, u, pw) => ServerConfig(h, p, ConnectionPool.Ssl.Mode.valueOf(s.toLowerCase.nn.capitalize), d, u, pw))
-      .nested("server")
+    val server =
+      (host ++ port ++ sslmode ++ database ++ user ++ password).map((a, b, c, d, e, f) => ServerConfig(a, b, c, d, e, f)).nested("server")
+
     val min = Config.int("min").withDefault(0).validate("Min poolsize must be >= 0")(_ >= 0)
     val max = Config.int("max").withDefault(64).validate("Max poolsize must be >= 1")(_ >= 1)
     val timeout = Config.duration("timeout").withDefault(15.minutes).validate("Pool timeout must be >= 90 seconds")(_ >= 90.seconds)
-    val pool = (min ++ max ++ timeout).map((mn, mx, tm) => PoolConfig(mn, mx, tm)).nested("pool")
+    val pool = (min ++ max ++ timeout).map((a, b, c) => PoolConfig(a, b, c)).nested("pool")
+
     val base = Config.duration("base").withDefault(100.milliseconds)
     val factor = Config.double("factor").withDefault(1.25d)
     val retries = Config.int("retries").withDefault(24)
-    val retry = (base ++ factor ++ retries).map((b, f, r) => RetryConfig(b, f, r)).nested(("retry"))
-    val socketbuffer = Config.int("socketbuffer").withDefault(8 * 1024 * 1024)
-    val bytebufinitial = Config.int("bytebufinitial").withDefault(128 * 1024)
-    val incomingqueue = Config.int("incomingqueue").withDefault(8 * 1024)
-    val outgoingstream = Config.int("outgoingstream").withDefault(4 * 1024)
-    val io = (socketbuffer ++ bytebufinitial ++ incomingqueue ++ outgoingstream).map((s, b, i, o) => IoConfig(s, b, i, o)).nested(("io"))
-    (server ++ pool ++ retry ++ io).nested("zio-pgcopy").map((s, p, r, i) => Configuration(s, p, r, i))
+    val retry = (base ++ factor ++ retries).map((a, b, c) => RetryConfig(a, b, c)).nested(("retry"))
+
+    val so_sndbuf = Config.int("so_sndbuf").map(Util.ceilPower2(_)).withDefault(32 * 1024)
+    val so_rcvbuf = Config.int("so_rcvbuf").map(Util.ceilPower2(_)).withDefault(32 * 1024)
+    val bytebufsize = Config.int("bytebufsize").map(Util.ceilPower2(_)).withDefault(128 * 1024)
+    val incomingsize = Config.int("incomingsize").map(Util.ceilPower2(_)).withDefault(8 * 1024)
+    val outgoingsize = Config.int("outgoingsize").map(Util.ceilPower2(_)).withDefault(4 * 1024)
+    val io = (so_rcvbuf ++ so_sndbuf ++ bytebufsize ++ incomingsize ++ outgoingsize)
+      .map((a, b, c, d, e) => IoConfig(a, b, c, d, e))
+      .nested(("io"))
+
+    (server ++ pool ++ retry ++ io).nested("zio-pgcopy").map((a, b, c, d) => Configuration(a, b, c, d))
 
 private case class ServerConfig(
     host: String,
@@ -118,5 +121,5 @@ private case class ServerConfig(
 )
 private case class PoolConfig(min: Int, max: Int, timeout: Duration)
 private case class RetryConfig(base: Duration, factor: Double, retries: Int)
-private case class IoConfig(sockerbuffer: Int, bytebufinitial: Int, incomingsize: Int, outgoingsize: Int)
+private case class IoConfig(so_rcvbuf: Int, so_sndbuf: Int, bytebufsize: Int, incomingsize: Int, outgoingsize: Int)
 private case class Configuration(server: ServerConfig, pool: PoolConfig, retry: RetryConfig, io: IoConfig)

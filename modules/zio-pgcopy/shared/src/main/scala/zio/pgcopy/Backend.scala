@@ -27,6 +27,7 @@ private object BackendMessage:
       case CopyInResponse.Tag         => CopyInResponse()
       case CopyDone.Tag               => CopyDone()
       case NoData.Tag                 => NoData()
+      case PortalSuspended.Tag        => PortalSuspended()
       case CommandComplete.Tag        => CommandComplete()
       case EmptyQueryRespponse.Tag    => EmptyQueryRespponse()
       case ParseComplete.Tag          => ParseComplete()
@@ -35,12 +36,13 @@ private object BackendMessage:
       case ParameterDescription.Tag   => ParameterDescription()
       case RowDescription.Tag         => RowDescription()
       case ErrorResponse.Tag          => ErrorResponse()
+      case NoticeResponse.Tag         => NoticeResponse()
       case _                          => UnhandledMessage(tag, len)
 
   case class UnhandledMessage(tag: Char, len: Int)(using buf: ByteBuf) extends BackendMessage:
     override def toString = s"UnhandledMessage($tag $len ${ByteBufUtil.hexDump(buf)})"
 
-  trait AuthenticationResponse extends BackendMessage
+  sealed trait AuthenticationResponse extends BackendMessage
   object AuthenticationResponse extends Decoder[AuthenticationResponse]:
     inline final val Tag = 'R'
     def apply()(using buf: ByteBuf) =
@@ -110,9 +112,8 @@ private object BackendMessage:
     def apply()(using buf: ByteBuf) =
       val format = buf.readByte
       val columns = buf.readShort
-      val columnformats = Array.ofDim[Short](columns)
-      Range(0, columns).foreach(i => columnformats.update(i, buf.readShort))
-      CopyOutResponse(format, columns, columnformats.toSeq)
+      val columnformats = Range(0, columns).map(_ => buf.readShort)
+      CopyOutResponse(format, columns, columnformats)
 
   case class CopyInResponse(format: Byte, columns: Short, columnformats: Seq[Short]) extends BackendMessage
   object CopyInResponse extends Decoder[CopyInResponse]:
@@ -120,9 +121,8 @@ private object BackendMessage:
     def apply()(using buf: ByteBuf) =
       val format = buf.readByte
       val columns = buf.readShort
-      val columnformats = Array.ofDim[Short](columns)
-      Range(0, columns).foreach(i => columnformats.update(i, buf.readShort))
-      CopyInResponse(format, columns, columnformats.toSeq)
+      val columnformats = Range(0, columns).map(_ => buf.readShort)
+      CopyInResponse(format, columns, columnformats)
 
   case object CopyDataFooter extends BackendMessage, Decoder[CopyDataFooter.type]:
     def apply()(using ByteBuf) = this
@@ -142,7 +142,10 @@ private object BackendMessage:
     inline final val Tag = 'C'
     def apply()(using buf: ByteBuf) = CommandComplete(buf.readUtf8z)
 
-  case class DataRow(columns: Seq[Array[Byte]]) extends BackendMessage
+  case class DataRow(columns: Seq[Array[Byte]]) extends BackendMessage:
+    override def toString =
+      s"DataRow(${columns.map(_.length)})"
+
   object DataRow extends Decoder[DataRow]:
     inline final val Tag = 'D'
     def apply()(using buf: ByteBuf) =
@@ -165,8 +168,9 @@ private object BackendMessage:
       ParameterDescription(parameters)
 
   case class RowDescription(fields: Seq[RowDescription.Field]) extends BackendMessage:
-    override def toString = s"RowDescription(${fields.size} fields:${fields.mkString("\n", "\n", "")})"
+    override def toString = s"RowDescription(fields = ${fields.size}${fields.mkString("\n", "\n", "")})"
     val length = fields.foldLeft(0)((s, a) => s + a.datasize)
+    println(this)
   object RowDescription extends Decoder[RowDescription]:
     case class Field(name: String, tableoid: Int, column: Short, dataoid: Int, datasize: Short, modifier: Int, format: Short):
       override def toString =
@@ -177,9 +181,7 @@ private object BackendMessage:
         Range(0, buf.readShort).map(_ =>
           Field(buf.readUtf8z, buf.readInt, buf.readShort, buf.readInt, buf.readShort, buf.readInt, buf.readShort)
         )
-      val res = RowDescription(fields)
-      println(s"$res")
-      res
+      RowDescription(fields)
 
   case object BindComplete extends BackendMessage:
     inline final val Tag = '2'
@@ -193,6 +195,10 @@ private object BackendMessage:
     inline final val Tag = 'n'
     def apply()(using ByteBuf) = this
 
+  case object PortalSuspended extends BackendMessage:
+    inline final val Tag = 's'
+    def apply()(using ByteBuf) = this
+
   case class ErrorResponse(errors: Seq[(Char, String)]) extends BackendMessage
   object ErrorResponse extends Decoder[ErrorResponse]:
     inline final val Tag = 'E'
@@ -200,10 +206,18 @@ private object BackendMessage:
       var errors = Seq.empty[(Char, String)]
       var more = true
       while more do
-        buf.readByte match
+        (buf.readByte: @switch) match
           case 0    => more = false
           case code => errors = errors :+ (code.toChar, buf.readUtf8z)
       ErrorResponse(errors)
+
+  case class NoticeResponse(indicator: Char, message: String) extends BackendMessage
+  object NoticeResponse extends Decoder[NoticeResponse]:
+    inline final val Tag = 'N'
+    def apply()(using buf: ByteBuf) =
+      (buf.readByte.toChar: @switch) match
+        case 0 => NoticeResponse('0', "")
+        case i => NoticeResponse(i, buf.readUtf8z)
 
   case class SslResponse(indicator: Char) extends BackendMessage
 

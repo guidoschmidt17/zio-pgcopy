@@ -7,6 +7,7 @@ import zio.Chunk
 
 import java.nio.charset.StandardCharsets.UTF_8
 import java.security.MessageDigest
+import scala.annotation.switch
 
 import FrontendMessage.*
 
@@ -23,11 +24,11 @@ private object FrontendMessage:
   enum Variant:
     case Portal, Statement
 
-  trait UntaggedFrontendMessage extends FrontendMessage:
+  sealed trait UntaggedFrontendMessage extends FrontendMessage:
     buf.writeInt(Int.MinValue)
     def lengthPrefixed(p: ByteBuf): ByteBuf = lengthPrefixed(0, p)
 
-  trait TaggedFrontendMessage(tag: Char) extends FrontendMessage:
+  sealed trait TaggedFrontendMessage(tag: Char) extends FrontendMessage:
     buf.writeByte(tag.toByte)
     buf.writeInt(Int.MinValue)
     def lengthPrefixed(p: ByteBuf): ByteBuf = lengthPrefixed(1, p)
@@ -36,7 +37,7 @@ private object FrontendMessage:
     final val payload = lengthPrefixed(buf)
 
   case class StartupMessage(user: String, database: String) extends UntaggedFrontendMessage:
-    private def keyed(k: String, v: String): ByteBuf =
+    inline private def keyed(k: String, v: String): ByteBuf =
       buf.writeUtf8z(k)
       buf.writeUtf8z(v)
     protected val message =
@@ -86,13 +87,14 @@ private object FrontendMessage:
       buf.writeShort(0)
       lengthPrefixed(buf)
 
-  case class Bind(name: String) extends TaggedFrontendMessage('B'):
+  case class Bind(name: String, fields: Int) extends TaggedFrontendMessage('B'):
     val payload =
       buf.writeUtf8z(name)
       buf.writeUtf8z(name)
       buf.writeShort(0)
       buf.writeShort(0)
-      buf.writeShort(0)
+      buf.writeShort(fields)
+      Range(0, fields).foreach(_ => buf.writeShort(1))
       lengthPrefixed(buf)
 
   case class Execute(name: String, limit: Int) extends TaggedFrontendMessage('E'):
@@ -101,9 +103,9 @@ private object FrontendMessage:
       buf.writeInt(limit)
       lengthPrefixed(buf)
 
-  abstract class WithVariant(variant: Variant, name: String, tag: Char) extends TaggedFrontendMessage(tag):
+  sealed abstract class WithVariant(variant: Variant, name: String, tag: Char) extends TaggedFrontendMessage(tag):
     val payload =
-      buf.writeByte(variant match
+      buf.writeByte((variant: @switch) match
         case Variant.Portal    => 'P'.toByte
         case Variant.Statement => 'S'.toByte
       )
@@ -127,16 +129,15 @@ private object FrontendMessage:
       buf.writeUtf8z(reason)
       lengthPrefixed(buf)
 
-  case class CopyData[A](rows: Chunk[A], rowsizehint: Int)(using encoder: Encoder[A]) extends TaggedFrontendMessage('d'):
+  case class CopyData[A](rows: Chunk[A])(using encoder: Encoder[A]) extends TaggedFrontendMessage('d'):
     override def toString = s"CopyOut(${rows.size})"
     val payload =
-      if rowsizehint > 0 then buf.ensureWritable(math.max(rowsizehint, 128) * rows.size)
       given ByteBuf = buf
-      buf.writeBytes(Header, 0, 19)
+      buf.writeBytes(Header, 0, Header.length)
       rows.foreach(encoder(_))
       buf.writeShort(-1)
       lengthPrefixed(buf)
 
   private final val Header: Array[Byte] = "PGCOPY".getBytes.nn ++ Array(0x0a, 0xff, 0x0d, 0x0a, 0, 0, 0, 0, 0, 0, 0, 0, 0).map(_.toByte)
 
-  private[pgcopy] final var ByteBufInitialSize = 8 * 1024
+  private[pgcopy] final var ByteBufInitialSize = -1

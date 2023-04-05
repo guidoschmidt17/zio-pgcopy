@@ -50,25 +50,25 @@ private case class Connection[E: MakeError](
       .chunks
       .concat(if isClosed then ZStream.fail(makeError(s"broken pipe $this")) else ZStream.empty)
 
-  def copyIn[A: Encoder](tableexpression: String, rows: Chunk[A], rowsizehint: Int) =
+  def copyIn[A: Encoder](tableexpression: String, rows: Chunk[A]) =
     for
       _ <- send(Query(s"copy $tableexpression from stdout with binary"))
       _ <- receiveUntil(CopyingIn)
-      _ <- send(FrontendMessage.CopyData(rows, rowsizehint))
+      _ <- send(FrontendMessage.CopyData(rows))
       _ <- send(FrontendMessage.CopyDone())
       _ <- receiveUntil(Idle)
     yield ()
 
-  def prepare[A](query: String) =
+  def describe[A](query: String) =
     for
       stmt <- ZIO.succeed("")
       _ <- send(Parse(stmt, query + s" offset ${Long.MaxValue} limit 0"))
       _ <- send(Describe(Variant.Statement, stmt))
-      _ <- send(Bind(stmt))
+      _ <- send(Bind(stmt, 0))
       _ <- send(Close(Variant.Statement, stmt))
       _ <- send(Execute(stmt, 0))
       _ <- send(Sync())
-      _ <- receiveUntil(CommandCommpleted)
+      _ <- receiveUntil(Idle)
     yield ()
 
   override def toString = s"Connection(0x${channel}, $getStatus)"
@@ -149,7 +149,7 @@ private case class Connection[E: MakeError](
       case AuthenticationSASLFinal(data)    => finalSASL(data)
       case ReadyForQuery(i) =>
         indicator = i
-        setStatus(i match
+        setStatus((i: @switch) match
           case 'I' => Idle
           case 'T' => NotIdle
           case 'E' => Failed
@@ -236,8 +236,8 @@ private case class ConnectionPool[E: MakeError] private (
       .recurs(math.max(0, retries - 1))
       .onDecision((state, out, decision) =>
         decision match
-          case Schedule.Decision.Continue(intervals) => ZIO.debug(s"pgcopy/connectionpool/acquire : retries $state/${retries} ")
-          case Schedule.Decision.Done                => ZIO.debug(s"pgcopy/connectionpool/acquire : retries failed $state/${retries} ")
+          case Schedule.Decision.Continue(intervals) => ZIO.debug(s"pgcopy/connectionpool : retries $state/${retries} ")
+          case Schedule.Decision.Done                => ZIO.debug(s"pgcopy/connectionpool : retries failed $state/${retries} ")
       )
 
 private object ConnectionPool:
@@ -258,11 +258,12 @@ private object ConnectionPool:
 
   object Ssl:
     def apply(mode: Mode): Option[TrustManagerFactory] =
-      mode match
+      (mode: @switch) match
         case Mode.Disable => None
-        case Mode.Trust   => Some(InsecureTrustManagerFactory.INSTANCE)
+        case Mode.Trust   => Some(insecure)
         case Mode.Runtime => Some(runtime)
-    final private val runtime =
+    final private lazy val insecure = InsecureTrustManagerFactory.INSTANCE
+    final private lazy val runtime =
       val factory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm)
       factory.init(null.asInstanceOf[KeyStore])
       factory
@@ -297,7 +298,7 @@ private object ConnectionPool:
 
   private final class ProtocolHandler[E](connection: Connection[E]) extends SimpleChannelInboundHandler[ByteBuf]:
 
-    override def channelRead0(ctx: ChannelHandlerContext, buf: ByteBuf): Unit =
+    inline override def channelRead0(ctx: ChannelHandlerContext, buf: ByteBuf): Unit =
       given ByteBuf = buf
       Unsafe.unsafely(Runtime.default.unsafe.run(connection.handle(BackendMessage())))
 
@@ -313,17 +314,18 @@ private object ConnectionPool:
   private def bootstrap(config: Configuration): Bootstrap =
     import config.server.*
     import config.io.*
-    val ssl = Ssl(sslmode)
     val initializer = new ChannelInitializer[NioSocketChannel]:
       def initChannel(channel: NioSocketChannel) =
-        ssl match
-          case None => channel.pipeline.addLast(FlushConsolidationHandler(), LengthFieldBasedFrameDecoder(Int.MaxValue, 1, 4, -4, 0))
-          case Some(factory) => channel.pipeline.addLast(SslStartupHandler(factory, host, port))
+        Ssl(sslmode) match
+          case Some(factory) =>
+            channel.pipeline.addLast(SslStartupHandler(factory, host, port))
+          case None =>
+            channel.pipeline.addLast(FlushConsolidationHandler(), LengthFieldBasedFrameDecoder(Int.MaxValue, 1, 4, -4, 0))
     Bootstrap()
       .group(NioEventLoopGroup())
       .channel(classOf[NioSocketChannel])
       .option(ChannelOption.TCP_NODELAY, true)
-      .option(ChannelOption.SO_RCVBUF, sockerbuffer)
-      .option(ChannelOption.SO_SNDBUF, sockerbuffer)
+      .option(ChannelOption.SO_RCVBUF, so_rcvbuf)
+      .option(ChannelOption.SO_SNDBUF, so_sndbuf)
       .handler(initializer)
       .remoteAddress(host, port)
