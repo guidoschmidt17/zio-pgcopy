@@ -26,7 +26,6 @@ object Copy:
     for
       pool <- ConnectionPool.make
       cfg <- ZIO.config(config)
-      _ <- ZIO.debug(cfg)
     yield make(pool, cfg)
 
   private def make[E: MakeError](pool: ConnectionPool[E], config: Configuration) = new Copy:

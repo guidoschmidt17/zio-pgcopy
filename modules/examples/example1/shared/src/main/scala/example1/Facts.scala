@@ -3,17 +3,19 @@ package example1
 import io.netty.buffer.ByteBuf
 import zio.Random.*
 import zio.*
+import zio.pgcopy.Codec.*
 import zio.pgcopy.*
 import zio.stream.*
 
 import java.time.OffsetDateTime
 
-import Codec.*
 import Util.*
 
 object Event:
   enum Category:
     case Created, Read, Updated, Deleted, Meta
+  inline given Conversion[String, Category] = Category.valueOf(_)
+  inline given Conversion[Category, String] = _.toString
 
 case class Fact(
     serialid: Long | Null,
@@ -26,6 +28,21 @@ case class Fact(
     eventdata: Array[Byte],
     tags: Array[String]
 )
+
+given Codec[Fact] = new Codec[Fact]:
+  def apply(a: Fact)(using ByteBuf): Unit =
+    import a.*
+    numberOfFields(7)
+    uuid(aggregateid.nn)
+    int4(aggregatelatest)
+    text(eventcategory)
+    uuid(eventid)
+    int4(eventdatalength)
+    bytea(eventdata)
+    _text(tags)
+
+  def apply()(using ByteBuf): Fact =
+    Fact(null, null, null, int4(), text(), uuid(), int4(), bytea(), _text())
 
 object Fact:
 
@@ -43,22 +60,3 @@ object Fact:
       aggregateid <- nextUUID
       facts <- ZIO.foreach(Range(0, n))(aggregatelatest => randomFact(aggregateid, aggregatelatest))
     yield Chunk.fromIterable(facts)
-
-  given Encoder[Fact] = new Encoder[Fact]:
-    def apply(a: Fact)(using ByteBuf): Unit =
-      fields(7)
-      import a.*
-      uuid(aggregateid)
-      int4(aggregatelatest)
-      text(eventcategory)
-      uuid(eventid)
-      int4(eventdatalength)
-      bytea(eventdata)
-      _text(tags)
-
-  given Decoder[Fact] = new Decoder[Fact]:
-    def apply()(using ByteBuf): Fact =
-      // Fact(int8(), timestamptz(), uuid(), int4(), Event.Category.valueOf(text()), uuid(), int4(), bytea(), _text())
-      Fact(null, null, null, int4(), Event.Category.valueOf(text()), uuid(), int4(), bytea(), _text())
-
-  val xxx = int8 *: timestamptz *: EmptyTuple

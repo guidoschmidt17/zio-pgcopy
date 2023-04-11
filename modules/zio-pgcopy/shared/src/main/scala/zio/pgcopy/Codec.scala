@@ -17,6 +17,7 @@ trait ArrayDecoder[A] extends Decoder[Array[A]]:
   def apply()(using ByteBuf): Array[A]
 trait Encoder[A]:
   def apply(a: A)(using ByteBuf): Unit
+  def as(a: Any)(using ByteBuf): Unit = apply(a.asInstanceOf[A])
 trait ArrayEncoder[A] extends Encoder[Array[A]]:
   def apply(a: Array[A])(using ByteBuf): Unit
 trait Codec[A] extends Encoder[A], Decoder[A]
@@ -32,6 +33,26 @@ object Codec:
     final lazy val typeoid: Int = Types.get(this).get
   protected sealed trait BaseCodec[A] extends Codec[A], BaseEncoder[A]
   protected sealed trait BaseArrayCodec[A] extends ArrayCodec[A], BaseArrayEncoder[A]
+
+  // sealed trait CodecValue[]:
+  //   def write(a: A, c: C)(using ByteBuf): Unit
+  // object CodecValue:
+  //   def write[A, C <: Codec[A]](a: A, c: C)(using codecvalue: CodecValue[A, C])(using ByteBuf): Unit =
+  //     codecvalue.write(a, c)
+
+  // sealed trait CodecValueApply[T]:
+  //   def write(t: T)(using ByteBuf): Unit
+
+  // given CodecValueApply[EmptyTuple] with
+  //   def write(e: EmptyTuple)(using ByteBuf) = ()
+  // given [H <: CodecValue[?, ?], T <: Tuple: CodecValueApply]: CodecValueApply[H *: T] with
+  //   given xx: CodecValue[Long, int8.type] = new CodecValue[Long, int8.type]:
+  //     def write(c: (int8.type, Long))(using ByteBuf): Unit = c._1(c._2)
+  //   def write[A, C <: Codec[A]](t: H *: T)(using ByteBuf) =
+  //     ???
+
+  // given CodecValue[Long, int8.type] = new CodecValue[Long, int8.type]:
+  //   def write(c: (int8.type, Long))(using ByteBuf): Unit = c._1(c._2)
 
   private class ArrayBuilder[A: ClassTag]:
     def apply(decoder: Decoder[A])(using buf: ByteBuf): Array[A] =
@@ -54,9 +75,14 @@ object Codec:
     def apply[A: ClassTag](decoder: Decoder[A])(using ByteBuf): Array[A] = new ArrayBuilder[A].apply(decoder)
     def apply[A: ClassTag](a: Array[A], encoder: BaseEncoder[A])(using ByteBuf): Unit = new ArrayBuilder[A].apply(a, encoder)
 
-  object fields extends Encoder[Short]:
+  object numberOfFields extends Encoder[Short]:
     def apply(a: Short)(using buf: ByteBuf) =
       buf.writeShort(a)
+    def apply(a: Int)(using buf: ByteBuf) =
+      buf.writeShort(a.toShort)
+    def apply[A <: Product](a: A)(using buf: ByteBuf) =
+      buf.writeShort(a.productIterator.filter(_ != null).length.toShort)
+
   object int2 extends BaseCodec[Short]:
     def apply()(using buf: ByteBuf) =
       buf.ignoreInt
@@ -78,6 +104,7 @@ object Codec:
     def apply(a: Long)(using buf: ByteBuf) =
       buf.writeInt(8)
       buf.writeLong(a)
+
   object float4 extends BaseCodec[Float]:
     def apply()(using buf: ByteBuf) =
       buf.ignoreInt

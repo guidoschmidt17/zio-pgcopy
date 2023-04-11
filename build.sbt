@@ -21,8 +21,8 @@ lazy val `zio-pgcopy` =
     .settings(commonDependencies)
     .settings(
       libraryDependencies ++= Seq(
-        "dev.zio" %%% "zio" % "2.0.10",
-        "dev.zio" %%% "zio-streams" % "2.0.10"
+        "dev.zio" %%% "zio" % "2.0.12",
+        "dev.zio" %%% "zio-streams" % "2.0.12"
       )
     )
     .jvmSettings(

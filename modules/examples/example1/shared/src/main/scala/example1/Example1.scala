@@ -31,16 +31,11 @@ object Example1 extends ZIOAppDefault:
                 ZStream.fromChunk(facts).rechunk(32 * 1024)
               )
               .measured(s"copy.in")
-            // _ <- copy
-            //   .describe[String, Fact](
-            //     s"select aggregatelatest,eventcategory::text,eventid,eventdatalength,eventdata,tags from fact order by serialid asc"
-            //   )
-            //   .measured(s"copy.describe")
+            aid = "05219252-8789-4259-9418-3f2d561e28c6"
             _ <- ZIO.scoped(
               copy
                 .out[String, Fact](
                   s"select aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags from fact order by serialid asc",
-                  // s"select * from fact where serialid > 0 order by serialid asc ",
                   n
                 )
                 .flatMap(_.runCount)
