@@ -19,7 +19,8 @@ create unlogged table fact (
   eventid uuid not null,
   eventdatalength int4 not null,
   eventdata bytea not null,
-  tags text[] not null
+  tags text[] not null,
+  big numeric not null
   ) with (autovacuum_enabled = off);
 
 -- eof

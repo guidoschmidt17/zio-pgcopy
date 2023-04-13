@@ -15,7 +15,6 @@ object Event:
   enum Category:
     case Created, Read, Updated, Deleted, Meta
   inline given Conversion[String, Category] = Category.valueOf(_)
-  inline given Conversion[Category, String] = _.toString
 
 case class Fact(
     serialid: Long | Null,
@@ -26,23 +25,25 @@ case class Fact(
     eventid: Uuid,
     eventdatalength: Int,
     eventdata: Array[Byte],
-    tags: Array[String]
+    tags: Array[String],
+    big: BigDecimal | Null
 )
 
 given Codec[Fact] = new Codec[Fact]:
   def apply(a: Fact)(using ByteBuf): Unit =
     import a.*
-    numberOfFields(7)
-    uuid(aggregateid.nn)
+    fields(8) // check!
+    uuid(aggregateid)
     int4(aggregatelatest)
     text(eventcategory)
     uuid(eventid)
     int4(eventdatalength)
     bytea(eventdata)
     _text(tags)
+    numeric(big)
 
   def apply()(using ByteBuf): Fact =
-    Fact(null, null, null, int4(), text(), uuid(), int4(), bytea(), _text())
+    Fact(null, null, null, int4(), text(), uuid(), int4(), bytea(), _text(), numeric())
 
 object Fact:
 
@@ -53,7 +54,18 @@ object Fact:
       eventdatalength <- nextIntBetween(5, 100)
       eventdata <- nextBytes(eventdatalength)
       tags = Array("bla", "blabla")
-    yield Fact(null, null, aggregateid, aggregatelatest, Event.Category.fromOrdinal(ec), eventid, eventdatalength, eventdata.toArray, tags)
+    yield Fact(
+      null,
+      null,
+      aggregateid,
+      aggregatelatest,
+      Event.Category.fromOrdinal(ec),
+      eventid,
+      eventdatalength,
+      eventdata.toArray,
+      tags,
+      BigDecimal("0.000")
+    )
 
   def randomFacts(n: Int): UIO[Chunk[Fact]] =
     for

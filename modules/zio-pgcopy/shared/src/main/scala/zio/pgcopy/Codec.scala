@@ -3,12 +3,14 @@ package pgcopy
 
 import io.netty.buffer.ByteBuf
 
+import java.math.BigInteger
 import java.nio.charset.StandardCharsets.UTF_8
 import java.time.Instant
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import scala.annotation.switch
+import scala.collection.mutable.ListBuffer
 import scala.reflect.ClassTag
 
 trait Decoder[A]:
@@ -34,27 +36,7 @@ object Codec:
   protected sealed trait BaseCodec[A] extends Codec[A], BaseEncoder[A]
   protected sealed trait BaseArrayCodec[A] extends ArrayCodec[A], BaseArrayEncoder[A]
 
-  // sealed trait CodecValue[]:
-  //   def write(a: A, c: C)(using ByteBuf): Unit
-  // object CodecValue:
-  //   def write[A, C <: Codec[A]](a: A, c: C)(using codecvalue: CodecValue[A, C])(using ByteBuf): Unit =
-  //     codecvalue.write(a, c)
-
-  // sealed trait CodecValueApply[T]:
-  //   def write(t: T)(using ByteBuf): Unit
-
-  // given CodecValueApply[EmptyTuple] with
-  //   def write(e: EmptyTuple)(using ByteBuf) = ()
-  // given [H <: CodecValue[?, ?], T <: Tuple: CodecValueApply]: CodecValueApply[H *: T] with
-  //   given xx: CodecValue[Long, int8.type] = new CodecValue[Long, int8.type]:
-  //     def write(c: (int8.type, Long))(using ByteBuf): Unit = c._1(c._2)
-  //   def write[A, C <: Codec[A]](t: H *: T)(using ByteBuf) =
-  //     ???
-
-  // given CodecValue[Long, int8.type] = new CodecValue[Long, int8.type]:
-  //   def write(c: (int8.type, Long))(using ByteBuf): Unit = c._1(c._2)
-
-  private class ArrayBuilder[A: ClassTag]:
+  private final class ArrayBuilder[A: ClassTag]:
     def apply(decoder: Decoder[A])(using buf: ByteBuf): Array[A] =
       buf.ignoreArrayHeader
       val len = buf.readInt
@@ -75,7 +57,7 @@ object Codec:
     def apply[A: ClassTag](decoder: Decoder[A])(using ByteBuf): Array[A] = new ArrayBuilder[A].apply(decoder)
     def apply[A: ClassTag](a: Array[A], encoder: BaseEncoder[A])(using ByteBuf): Unit = new ArrayBuilder[A].apply(a, encoder)
 
-  object numberOfFields extends Encoder[Short]:
+  object fields extends Encoder[Short]:
     def apply(a: Short)(using buf: ByteBuf) =
       buf.writeShort(a)
     def apply(a: Int)(using buf: ByteBuf) =
@@ -119,11 +101,48 @@ object Codec:
     def apply(a: Double)(using buf: ByteBuf) =
       buf.writeInt(8)
       buf.writeDouble(a)
+
+  private case class NumericComponents(scale: Int, groups: Int, sign: Int, digits: ListBuffer[Int])
+  private object NumericComponents:
+    final val BIGINT10000 = BigInteger("10000")
+    def apply(a: BigDecimal): NumericComponents =
+      var unscaled: BigInteger = a.underlying.unscaledValue
+      val scale = a.scale
+      val groups = if scale > 0 then (scale + 3) / 4 else 0
+      val sign = if unscaled.signum == -1 then 0x4000 else 0x0000
+      unscaled = if unscaled.signum == -1 then unscaled.negate else unscaled
+      val digits: ListBuffer[Int] = ListBuffer()
+      if scale > 0 then
+        val remainder = scale % 4
+        if remainder != 0 then
+          val result: Array[BigInteger | Null] = unscaled.divideAndRemainder(BigInteger.TEN.pow(remainder))
+          val digit: Int = (result(1).intValue * math.pow(10, 4 - remainder)).toInt
+          unscaled = result(0)
+          digits.insert(0, digit)
+        while unscaled != BigInteger.ZERO do
+          val result: Array[BigInteger | Null] = unscaled.divideAndRemainder(BIGINT10000)
+          unscaled = result(0)
+          digits.insert(0, result(1).intValue)
+        NumericComponents(scale, groups, sign, digits)
+      else
+        unscaled = unscaled.multiply(BigInteger.TEN.pow(-scale))
+        while unscaled != BigInteger.ZERO do
+          val result: Array[BigInteger | Null] = unscaled.divideAndRemainder(BIGINT10000)
+          unscaled = result(0)
+          digits.insert(0, result(1).intValue)
+        NumericComponents(scale, 0, 0, digits)
   object numeric extends BaseCodec[BigDecimal]:
     def apply()(using ByteBuf) =
       BigDecimal(text())
     def apply(a: BigDecimal)(using buf: ByteBuf) =
-      buf.writeUtf8z(s"'$a'::numeric")
+      val n = NumericComponents(a)
+      val len = n.digits.length
+      buf.writeInt(8 + (2 * len))
+      buf.writeShort(len)
+      buf.writeShort(len - n.groups - 1)
+      buf.writeShort(n.sign)
+      buf.writeShort(math.max(0, n.scale))
+      n.digits.foreach(d => buf.writeShort(d))
 
   object _int2 extends BaseArrayCodec[Short]:
     def apply()(using ByteBuf) = ArrayBuilder[Short](int2)
@@ -148,14 +167,14 @@ object Codec:
     def apply()(using buf: ByteBuf) =
       buf.readUtf8(buf.readInt)
     def apply(a: String)(using buf: ByteBuf) =
-      buf.writeText(a)
+      buf.writeUtf8(a)
     def apply(a: Any)(using buf: ByteBuf) =
-      buf.writeText(a.toString)
+      buf.writeUtf8(a.toString)
   object varchar extends BaseCodec[String]:
     def apply()(using buf: ByteBuf) =
       buf.readUtf8(buf.readInt)
     def apply(a: String)(using buf: ByteBuf) =
-      buf.writeText(a)
+      buf.writeUtf8(a)
   object name extends BaseCodec[String]:
     def apply()(using buf: ByteBuf) =
       val len = buf.readInt
@@ -163,7 +182,7 @@ object Codec:
       buf.readUtf8(len)
     def apply(a: String)(using buf: ByteBuf) =
       assert(a.length < 64, s"name.maxlength (63) exceeded: ${a.length}} $a")
-      buf.writeText(a)
+      buf.writeUtf8(a)
   object char extends BaseCodec[Char]:
     def apply()(using buf: ByteBuf) =
       buf.ignoreInt
@@ -339,21 +358,19 @@ object Codec:
     case n                    => n
 
   extension (buf: ByteBuf)
-    inline def ignoreCopyOutHeader: Unit =
-      buf.readerIndex(buf.readerIndex + 19)
-    inline def ignoreByte: Unit =
-      buf.readerIndex(buf.readerIndex + 1)
     inline def ignoreInt: Unit =
       buf.readerIndex(buf.readerIndex + 4)
     inline def ignoreArrayHeader: Unit =
       buf.readerIndex(buf.readerIndex + 16)
+    inline def ignoreCopyOutHeader: Unit =
+      buf.readerIndex(buf.readerIndex + 19)
     inline def readUtf8(len: Int): String =
       String.valueOf(buf.readCharSequence(len, UTF_8))
     inline def readUtf8z: String =
       var i = buf.readerIndex
       while buf.getByte(i) != 0 do i += 1
       val res = String.valueOf(buf.readCharSequence(i - buf.readerIndex, UTF_8))
-      buf.ignoreByte
+      buf.readerIndex(buf.readerIndex + 1)
       res
     inline def readByteArray(len: Int): Array[Byte] =
       val arr = Array.ofDim[Byte](len)
@@ -364,10 +381,10 @@ object Codec:
     inline def writeUtf8z(s: String): ByteBuf =
       buf.writeBytes(s.getBytes(UTF_8))
       buf.writeByte(0)
-    inline def writeText(s: String): ByteBuf =
+    inline def writeUtf8(s: String): ByteBuf =
       val bytes = s.getBytes(UTF_8)
       val len = bytes.length
       buf.writeInt(len)
       buf.writeBytes(bytes, 0, len)
 
-inline private given nn_conversion[A]: Conversion[A | Null, A] = _.nn
+inline private given [A]: Conversion[A | Null, A] = _.nn
