@@ -43,7 +43,9 @@ given Codec[Fact] = new Codec[Fact]:
     numeric(big)
 
   def apply()(using ByteBuf): Fact =
-    Fact(null, null, null, int4(), text(), uuid(), int4(), bytea(), _text(), numeric())
+    val res = Fact(null, null, null, int4(), text(), uuid(), int4(), bytea(), _text(), numeric())
+    println(res)
+    res
 
 object Fact:
 
@@ -64,7 +66,8 @@ object Fact:
       eventdatalength,
       eventdata.toArray,
       tags,
-      BigDecimal("0.000")
+      BigDecimal("17")
+      // BigDecimal("-9834754923857938572934857239485739847597345.12345")
     )
 
   def randomFacts(n: Int): UIO[Chunk[Fact]] =

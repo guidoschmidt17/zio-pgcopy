@@ -102,47 +102,102 @@ object Codec:
       buf.writeInt(8)
       buf.writeDouble(a)
 
-  private case class NumericComponents(scale: Int, groups: Int, sign: Int, digits: ListBuffer[Int])
+  private case class NumericComponents(weight: Int, sign: Int, scale: Int, digits: ListBuffer[Int])
   private object NumericComponents:
-    final val BIGINT10000 = BigInteger("10000")
+    final val BigInt10000 = BigInteger.valueOf(10000)
+    final val IntPowerOfTen = Range(0, 6).map(math.pow(10, _)).map(_.toInt)
+    final val BigIntPowerOfTen = Range(0, 6).map(BigInteger.TEN.pow(_).nn)
+    inline def powerOfTen(e: Int) = if e < BigIntPowerOfTen.length then BigIntPowerOfTen(e) else BigInteger.TEN.pow(e)
+    inline final val POS = 0x0000
+    inline final val NEG = 0x4000
+    def apply(weight: Int, sign: Int, scale: Int, digits: Seq[Short]): BigDecimal =
+      if digits.length == 0 then BigDecimal(0)
+      else
+        var unscaledint = digits(0).toLong
+        var unscaled: BigInteger | Null = null
+        if weight < 0 then BigDecimal(5)
+        else if scale == 0 then
+          Range(1, digits.length).foreach(i =>
+            if i == 4 then unscaled = BigInteger.valueOf(unscaledint)
+            var d: Int = digits(i)
+            if unscaled == null then
+              unscaledint *= 10000
+              unscaledint += d
+            else
+              unscaled = unscaled.multiply(BigInt10000)
+              if d != 0 then unscaled = unscaled.add(BigInteger.valueOf(d))
+          )
+          if unscaled == null then unscaled = BigInteger.valueOf(unscaledint)
+          if sign == NEG then unscaled = unscaled.negate
+          val bdscale = (digits.length - (weight + 1)) * 4
+          BigDecimal(if bdscale == 0 then new java.math.BigDecimal(unscaled) else new java.math.BigDecimal(unscaled, bdscale).setScale(0))
+        else
+          var effectiveweight = weight
+          var effectivescale = scale
+          Range(1, digits.length).foreach(i =>
+            if i == 4 then unscaled = BigInteger.valueOf(unscaledint)
+            var d: Int = digits(i)
+            if effectiveweight > 0 then
+              effectiveweight -= 1
+              if unscaled == null then unscaledint *= 10000 else unscaled = unscaled.multiply(BigInt10000)
+            else if effectivescale >= 4 then
+              effectivescale -= 4
+              if unscaled == null then unscaledint *= 10000 else unscaled = unscaled.multiply(BigInt10000)
+            else
+              if unscaled == null then unscaledint *= IntPowerOfTen(effectivescale)
+              else unscaled = unscaled.multiply(powerOfTen(effectivescale))
+              d = d / IntPowerOfTen(4 - effectivescale)
+              effectivescale = 0
+            if unscaled == null then unscaledint += d else if d != 0 then unscaled = unscaled.add(BigInteger.valueOf(d))
+          )
+          if unscaled == null then unscaled = BigInteger.valueOf(unscaledint)
+          if effectiveweight > 0 then unscaled = unscaled.multiply(powerOfTen(4 * effectiveweight))
+          if effectivescale > 0 then unscaled = unscaled.multiply(powerOfTen(effectivescale))
+          if sign == NEG then unscaled = unscaled.negate
+          BigDecimal(new java.math.BigDecimal(unscaled, scale))
     def apply(a: BigDecimal): NumericComponents =
       var unscaled: BigInteger = a.underlying.unscaledValue
       val scale = a.scale
-      val groups = if scale > 0 then (scale + 3) / 4 else 0
-      val sign = if unscaled.signum == -1 then 0x4000 else 0x0000
+      val weight = if scale > 0 then (scale + 3) / 4 else 0
+      val sign = if unscaled.signum == -1 then NEG else POS
       unscaled = if unscaled.signum == -1 then unscaled.negate else unscaled
       val digits: ListBuffer[Int] = ListBuffer()
       if scale > 0 then
         val remainder = scale % 4
         if remainder != 0 then
-          val result: Array[BigInteger | Null] = unscaled.divideAndRemainder(BigInteger.TEN.pow(remainder))
-          val digit: Int = (result(1).intValue * math.pow(10, 4 - remainder)).toInt
+          val result = unscaled.divideAndRemainder(BigIntPowerOfTen(remainder))
           unscaled = result(0)
-          digits.insert(0, digit)
+          digits.insert(0, result(1).intValue * IntPowerOfTen(4 - remainder))
         while unscaled != BigInteger.ZERO do
-          val result: Array[BigInteger | Null] = unscaled.divideAndRemainder(BIGINT10000)
+          val result = unscaled.divideAndRemainder(BigInt10000)
           unscaled = result(0)
           digits.insert(0, result(1).intValue)
-        NumericComponents(scale, groups, sign, digits)
+        NumericComponents(weight, sign, math.max(0, scale), digits)
       else
         unscaled = unscaled.multiply(BigInteger.TEN.pow(-scale))
         while unscaled != BigInteger.ZERO do
-          val result: Array[BigInteger | Null] = unscaled.divideAndRemainder(BIGINT10000)
+          val result = unscaled.divideAndRemainder(BigInt10000)
           unscaled = result(0)
           digits.insert(0, result(1).intValue)
-        NumericComponents(scale, 0, 0, digits)
+        NumericComponents(0, 0, scale, digits)
   object numeric extends BaseCodec[BigDecimal]:
-    def apply()(using ByteBuf) =
-      BigDecimal(text())
+    def apply()(using buf: ByteBuf) =
+      buf.ignoreInt
+      val len = buf.readShort & 0xffff
+      val weight = buf.readShort
+      val sign = buf.readShort
+      val scale = buf.readShort
+      val digits = Range(0, len).map(_ => buf.readShort)
+      NumericComponents(weight, sign, scale, digits)
     def apply(a: BigDecimal)(using buf: ByteBuf) =
-      val n = NumericComponents(a)
-      val len = n.digits.length
+      val num = NumericComponents(a)
+      val len = num.digits.length
       buf.writeInt(8 + (2 * len))
       buf.writeShort(len)
-      buf.writeShort(len - n.groups - 1)
-      buf.writeShort(n.sign)
-      buf.writeShort(math.max(0, n.scale))
-      n.digits.foreach(d => buf.writeShort(d))
+      buf.writeShort(len - num.weight - 1)
+      buf.writeShort(num.sign)
+      buf.writeShort(num.scale)
+      num.digits.foreach(d => buf.writeShort(d))
 
   object _int2 extends BaseArrayCodec[Short]:
     def apply()(using ByteBuf) = ArrayBuilder[Short](int2)

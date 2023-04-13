@@ -34,14 +34,14 @@ object Example1 extends ZIOAppDefault:
             _ <- ZIO.scoped(
               copy
                 .out[String, Fact](
-                  s"select aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags,big::text from fact",
+                  s"select aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags,big from fact",
                   n
                 )
                 .flatMap(_.runDrain)
                 .measured(s"copy.out")
             )
           yield ()
-        loop.repeatN(0)
+        loop.repeatN(19)
 
   val program =
     ZIO
