@@ -110,9 +110,9 @@ object Codec:
       NumericComponents(weight, sign, scale, digits)
     def apply(a: BigDecimal)(using buf: ByteBuf) =
       val num = NumericComponents(a)
-      buf.writeInt(8 + (2 * num.length))
-      buf.writeShort(num.length)
-      buf.writeShort(num.length - num.weight - 1)
+      buf.writeInt(num.bufferlen)
+      buf.writeShort(num.len)
+      buf.writeShort(num.w)
       buf.writeShort(num.sign)
       buf.writeShort(num.scale)
       num.digits.foreach(d => buf.writeShort(d))
