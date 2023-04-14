@@ -16,7 +16,7 @@ object Util:
 
     override def toString = uuid.toString
 
-    inline def write(buf: ByteBuf) =
+    inline def write(buf: ByteBuf): Unit =
       buf.writeLong(uuid.getMostSignificantBits)
       buf.writeLong(uuid.getLeastSignificantBits)
 

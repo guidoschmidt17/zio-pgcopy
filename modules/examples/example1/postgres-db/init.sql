@@ -20,7 +20,9 @@ create unlogged table fact (
   eventdatalength int4 not null,
   eventdata bytea not null,
   tags text[] not null,
-  big numeric not null
+  big numeric not null, 
+  jb jsonb not null,
+  j json not null
   ) with (autovacuum_enabled = off);
 
 -- eof

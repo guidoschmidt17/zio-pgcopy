@@ -26,13 +26,15 @@ case class Fact(
     eventdatalength: Int,
     eventdata: Array[Byte],
     tags: Array[String],
-    big: BigDecimal
+    big: BigDecimal,
+    jb: String,
+    j: String
 )
 
 given Codec[Fact] = new Codec[Fact]:
   def apply(a: Fact)(using ByteBuf): Unit =
     import a.*
-    fields(8) // check!
+    fields(10) // check!
     uuid(aggregateid)
     int4(aggregatelatest)
     text(eventcategory)
@@ -41,9 +43,11 @@ given Codec[Fact] = new Codec[Fact]:
     bytea(eventdata)
     _text(tags)
     numeric(big)
+    jsonb(jb)
+    json(j)
 
   def apply()(using ByteBuf): Fact =
-    val res = Fact(null, null, null, int4(), text(), uuid(), int4(), bytea(), _text(), numeric())
+    val res = Fact(null, null, null, int4(), text(), uuid(), int4(), bytea(), _text(), numeric(), jsonb(), json())
     println(res)
     res
 
@@ -66,9 +70,9 @@ object Fact:
       eventdatalength,
       eventdata.toArray,
       tags,
-      // BigDecimal("17")
-      BigDecimal("-9834754923857938572934857239485739847597345.12345")
-      // BigDecimal("3.1452e-21")
+      BigDecimal("3.1452e-21"),
+      s"[42, true,      null, 3.14]",
+      s"[42, true,      null, 3.15]"
     )
 
   def randomFacts(n: Int): UIO[Chunk[Fact]] =

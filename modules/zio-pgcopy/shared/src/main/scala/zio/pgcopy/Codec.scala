@@ -157,6 +157,25 @@ object Codec:
     def apply(a: Char)(using buf: ByteBuf) =
       buf.writeInt(1)
       buf.writeByte(a.toByte)
+  object json extends BaseCodec[String]:
+    def apply()(using buf: ByteBuf) =
+      buf.readUtf8(buf.readInt)
+    def apply(a: String)(using buf: ByteBuf) =
+      buf.writeUtf8(a)
+  object jsonb extends BaseCodec[String]:
+    def apply()(using buf: ByteBuf) =
+      val len = buf.readInt
+      buf.readByte
+      buf.readUtf8(len - 1)
+    def apply(a: String)(using buf: ByteBuf) =
+      buf.writeInt(1 + a.length)
+      buf.writeByte(1)
+      buf.writeUtf8s(a)
+    def apply(a: Any)(using buf: ByteBuf) =
+      val s = a.toString
+      buf.writeInt(1 + s.length)
+      buf.writeByte(1)
+      buf.writeUtf8s(s)
 
   object _text extends BaseArrayCodec[String]:
     def apply()(using ByteBuf) = ArrayBuilder[String](text)
@@ -164,12 +183,18 @@ object Codec:
   object _varchar extends BaseArrayCodec[String]:
     def apply()(using ByteBuf) = ArrayBuilder[String](varchar)
     def apply(a: Array[String])(using ByteBuf) = ArrayBuilder[String](a, varchar)
+  object _json extends BaseArrayCodec[String]:
+    def apply()(using ByteBuf) = ArrayBuilder[String](json)
+    def apply(a: Array[String])(using ByteBuf) = ArrayBuilder[String](a, json)
   object _char extends BaseArrayCodec[Char]:
     def apply()(using ByteBuf) = ArrayBuilder[Char](char)
     def apply(a: Array[Char])(using ByteBuf) = ArrayBuilder[Char](a, char)
   object _name extends BaseArrayCodec[String]:
     def apply()(using ByteBuf) = ArrayBuilder[String](name)
     def apply(a: Array[String])(using ByteBuf) = ArrayBuilder[String](a, name)
+  object _jsonb extends BaseArrayCodec[String]:
+    def apply()(using ByteBuf) = ArrayBuilder[String](jsonb)
+    def apply(a: Array[String])(using ByteBuf) = ArrayBuilder[String](a, jsonb)
 
   object bytea extends BaseCodec[Array[Byte]]:
     def apply()(using buf: ByteBuf) =
@@ -290,6 +315,7 @@ object Codec:
     int2 -> 21,
     int4 -> 23,
     text -> 25,
+    json -> 114,
     float4 -> 700,
     float8 -> 701,
     varchar -> 1043,
@@ -299,6 +325,8 @@ object Codec:
     interval -> 1186,
     numeric -> 1700,
     uuid -> 2950,
+    jsonb -> 3802,
+    _json -> 199,
     _bool -> 1000,
     _bytea -> 1001,
     _char -> 1002,
@@ -315,7 +343,8 @@ object Codec:
     _timestamptz -> 1185,
     _interval -> 1187,
     _numeric -> 1231,
-    _uuid -> 2951
+    _uuid -> 2951,
+    _jsonb -> 3807
   )
 
   private def fromOid(oid: Int): BaseEncoder[?] | BaseArrayEncoder[?] = Types.find(_._2 == oid).map(_._1).getOrElse(text)
@@ -348,6 +377,8 @@ object Codec:
     inline def writeUtf8z(s: String): ByteBuf =
       buf.writeBytes(s.getBytes(UTF_8))
       buf.writeByte(0)
+    inline def writeUtf8s(s: String): ByteBuf =
+      buf.writeBytes(s.getBytes(UTF_8))
     inline def writeUtf8(s: String): ByteBuf =
       val bytes = s.getBytes(UTF_8)
       val len = bytes.length

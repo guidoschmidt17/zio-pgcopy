@@ -4,6 +4,8 @@ import org.scalajs.linker.interface.ModuleSplitStyle
 import org.scalajs.linker.interface.OutputPatterns
 
 ThisBuild / organization := "zio-pgcopy"
+ThisBuild / licenses := Seq(License.Apache2)
+ThisBuild / developers := List(Developer("guidoschmidt17", "Guido Schmidt", "", url("https://github.com/guidoschmidt17/eventsourcing-3")))
 ThisBuild / scalaVersion := "3.2.2"
 
 ThisBuild / showSuccess := false

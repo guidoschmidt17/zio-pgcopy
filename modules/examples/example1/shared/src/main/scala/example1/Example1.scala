@@ -27,14 +27,14 @@ object Example1 extends ZIOAppDefault:
             facts <- randomFacts(n)
             _ <- copy
               .in(
-                s"fact (aggregateid,aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags,big)",
+                s"fact (aggregateid,aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags,big,jb,j)",
                 ZStream.fromChunk(facts).rechunk(32 * 1024)
               )
               .measured(s"copy.in")
             _ <- ZIO.scoped(
               copy
                 .out[String, Fact](
-                  s"select aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags,big from fact order by serialid desc",
+                  s"select aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags,big,jb,j from fact order by serialid desc",
                   n
                 )
                 .flatMap(_.runDrain)
