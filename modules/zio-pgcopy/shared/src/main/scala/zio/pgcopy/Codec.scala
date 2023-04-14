@@ -13,15 +13,9 @@ import scala.reflect.ClassTag
 
 trait Decoder[A]:
   def apply()(using ByteBuf): A
-trait ArrayDecoder[A] extends Decoder[Array[A]]:
-  def apply()(using ByteBuf): Array[A]
 trait Encoder[A]:
   def apply(a: A)(using ByteBuf): Unit
-  def as(a: Any)(using ByteBuf): Unit = apply(a.asInstanceOf[A])
-trait ArrayEncoder[A] extends Encoder[Array[A]]:
-  def apply(a: Array[A])(using ByteBuf): Unit
 trait Codec[A] extends Encoder[A], Decoder[A]
-trait ArrayCodec[A] extends ArrayEncoder[A], ArrayDecoder[A]
 
 object Codec:
 
@@ -29,10 +23,10 @@ object Codec:
 
   protected sealed trait BaseEncoder[A] extends Encoder[A]:
     final lazy val typeoid: Int = Types.get(this).get
-  protected sealed trait BaseArrayEncoder[A] extends ArrayEncoder[A]:
+  protected sealed trait BaseArrayEncoder[A] extends Encoder[Array[A]]:
     final lazy val typeoid: Int = Types.get(this).get
   protected sealed trait BaseCodec[A] extends Codec[A], BaseEncoder[A]
-  protected sealed trait BaseArrayCodec[A] extends ArrayCodec[A], BaseArrayEncoder[A]
+  protected sealed trait BaseArrayCodec[A] extends Codec[Array[A]], BaseArrayEncoder[A]
 
   private final class ArrayBuilder[A: ClassTag]:
     def apply(decoder: Decoder[A])(using buf: ByteBuf): Array[A] =

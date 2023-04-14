@@ -4,8 +4,6 @@ package pgcopy
 import zio.*
 import zio.stream.*
 
-import scala.deriving.*
-
 trait Copy:
 
   import Copy.MakeError

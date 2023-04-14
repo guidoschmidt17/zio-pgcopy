@@ -34,7 +34,7 @@ object Example1 extends ZIOAppDefault:
             _ <- ZIO.scoped(
               copy
                 .out[String, Fact](
-                  s"select aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags,big from fact",
+                  s"select aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags,big from fact order by serialid desc",
                   n
                 )
                 .flatMap(_.runDrain)
