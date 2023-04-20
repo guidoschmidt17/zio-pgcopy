@@ -143,8 +143,8 @@ object Util:
           unscaled = result(0)
           digits.insert(0, result(1).intValue * IntPowerOfTen(4 - remainder))
         eucl
-        NumericComponents(weight, sign, math.max(0, scale), digits)
+        NumericComponents(weight, sign, scale, digits)
       else
         unscaled = unscaled.multiply(BigInteger.TEN.pow(-scale))
         eucl
-        NumericComponents(0, 0, scale, digits)
+        NumericComponents(0, 0, math.max(0, scale), digits)

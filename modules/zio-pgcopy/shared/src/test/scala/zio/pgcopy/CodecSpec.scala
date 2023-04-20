@@ -11,7 +11,7 @@ import Codec.*
 object CodecSpec extends ZIOSpecDefault:
 
   def spec: Spec[Environment & TestEnvironment, Any] =
-    suite("All codecs") {
+    suite("codecs") {
       suite("numeric") {
         test("int2") {
           given buf: ByteBuf = Unpooled.wrappedBuffer(Array.ofDim[Byte](2048))
@@ -20,8 +20,6 @@ object CodecSpec extends ZIOSpecDefault:
           buf.clear; int2(1); assertTrue(1 == int2())
           buf.clear; int2(Short.MinValue); assertTrue(Short.MinValue == int2())
           buf.clear; int2(Short.MaxValue); assertTrue(Short.MaxValue == int2())
-        } + test("_int2") {
-          given buf: ByteBuf = Unpooled.wrappedBuffer(Array.ofDim[Byte](2048))
           buf.clear; _int2(Array(Short.MinValue, -1, 0, 1, Short.MaxValue));
           assertTrue(Array(Short.MinValue, -1, 0, 1, Short.MaxValue).sameElements(_int2()))
         }
@@ -49,6 +47,8 @@ object CodecSpec extends ZIOSpecDefault:
             buf.clear; float4(math.Pi.toFloat); assertTrue(math.Pi.toFloat == float4())
             buf.clear; float4(Float.MinValue); assertTrue(Float.MinValue == float4())
             buf.clear; float4(Float.MaxValue); assertTrue(Float.MaxValue == float4())
+            buf.clear; _float4(Array(Float.MinValue, -1, 0, 1, math.Pi.toFloat, Float.MaxValue));
+            assertTrue(Array(Float.MinValue, -1, 0, 1, math.Pi.toFloat, Float.MaxValue).sameElements(_float4()))
           }
           + test("float8") {
             given buf: ByteBuf = Unpooled.wrappedBuffer(Array.ofDim[Byte](2048))
@@ -66,11 +66,22 @@ object CodecSpec extends ZIOSpecDefault:
             buf.clear; numeric(1); assertTrue(1 == numeric())
             buf.clear; numeric(math.Pi); assertTrue(math.Pi == numeric())
             buf.clear; numeric(BigDecimal("-3.14e-21")); assertTrue(BigDecimal("-3.14e-21") == numeric())
-            buf.clear; numeric(BigDecimal("-3.14e21")); assertTrue(BigDecimal("-3.14e21") == numeric())
+            buf.clear; numeric(BigDecimal("-3.14e210")); assertTrue(BigDecimal("-3.14e210") == numeric())
             buf.clear; numeric(BigDecimal("827349823749823749283749283749287928234729847928347293847293847923847239847.984384279487"));
             assertTrue(BigDecimal("827349823749823749283749283749287928234729847928347293847293847923847239847.984384279487") == numeric())
             buf.clear; numeric(BigDecimal(Float.MinPositiveValue)); assertTrue(BigDecimal(Float.MinPositiveValue) == numeric())
-            // buf.clear; numeric(Double.MaxValue); assertTrue(Double.MaxValue == numeric())
+            buf.clear; numeric(Int.MinValue); assertTrue(Int.MinValue == numeric())
+            buf.clear; numeric(Int.MaxValue); assertTrue(Int.MaxValue == numeric())
+            buf.clear; numeric(Long.MinValue); assertTrue(Long.MinValue == numeric())
+            buf.clear; numeric(Long.MaxValue); assertTrue(Long.MaxValue - 1 == numeric() - 1)
+            buf.clear; numeric(Long.MaxValue); assertTrue(Long.MaxValue == numeric())
+            buf.clear; numeric(BigDecimal("3.14E38")); assertTrue(BigDecimal("3.14E38") == numeric())
+            buf.clear; numeric(BigDecimal(Float.MinValue)); assertTrue(BigDecimal(Float.MinValue) == numeric())
+            buf.clear; numeric(BigDecimal(Float.MaxValue)); assertTrue(BigDecimal(Float.MaxValue) == numeric())
+            buf.clear; numeric(BigDecimal(Float.MinPositiveValue)); assertTrue(BigDecimal(Float.MinPositiveValue) == numeric())
+            buf.clear; numeric(BigDecimal(Double.MinValue)); assertTrue(BigDecimal(Double.MinValue) == numeric())
+            buf.clear; numeric(BigDecimal(Double.MaxValue)); assertTrue(BigDecimal(Double.MaxValue) == numeric())
+            buf.clear; numeric(BigDecimal(Double.MinPositiveValue)); assertTrue(BigDecimal(Double.MinPositiveValue) == numeric())
           }
       } + suite("text") {
         test("text") {
@@ -99,6 +110,7 @@ object CodecSpec extends ZIOSpecDefault:
           given buf: ByteBuf = Unpooled.wrappedBuffer(Array.ofDim[Byte](2048))
           buf.clear; bool(false); assertTrue(false == bool())
           buf.clear; bool(true); assertTrue(true == bool())
+          buf.clear; _bool(Array(true, true, false, false, true)); assertTrue(Array(true, true, false, false, true).sameElements(_bool()))
         } +
           test("bytea") {
             given buf: ByteBuf = Unpooled.wrappedBuffer(Array.ofDim[Byte](2048))
@@ -106,42 +118,42 @@ object CodecSpec extends ZIOSpecDefault:
             buf.clear; bytes = Array(0); bytea(bytes); assertTrue(Array(0).sameElements(bytea()))
             buf.clear; bytes = "lkasjdflkajsdflkjasdöfl kjasldökfjasldkfjasldkfjalskdjflöasdkjföalskdjf".getBytes("UTF-8").nn
             bytea(bytes); assertTrue(bytes.sameElements(bytea()))
-          }
-      } +
-        test("uuid") {
-          import Util.Uuid
-          given buf: ByteBuf = Unpooled.wrappedBuffer(Array.ofDim[Byte](2048))
-          buf.clear; var u = Uuid(java.util.UUID.randomUUID.nn); uuid(u); assertTrue(u == uuid())
-          buf.clear; u = Uuid(java.util.UUID.randomUUID.nn); uuid(u); assertTrue(u == uuid())
-
-        } + suite("timestamps") {
-          test("interval") {
-            import Util.Interval
-            given buf: ByteBuf = Unpooled.wrappedBuffer(Array.ofDim[Byte](2048))
-            buf.clear; var i = Interval(1970, 1, 1, 0, 0, 0); interval(i); assertTrue(i == interval())
-            buf.clear; i = Interval(2023, 4, 21, 14, 59, 59.099); interval(i); assertTrue(i == interval())
           } +
-            test("timestamptz") {
-              import java.time.OffsetDateTime
-              import java.time.LocalDate
-              import java.time.LocalTime
-              import java.time.ZoneOffset.UTC
-              given buf: ByteBuf = Unpooled.wrappedBuffer(Array.ofDim[Byte](2048))
-              buf.clear; var t = OffsetDateTime.now(UTC); timestamptz(t); assertTrue(t == timestamptz())
-              buf.clear; t = OffsetDateTime.of(LocalDate.of(1970, 1, 1), LocalTime.of(0, 0), UTC); timestamptz(t);
-              assertTrue(t == timestamptz())
-              buf.clear; t = OffsetDateTime.of(LocalDate.of(1945, 5, 8), LocalTime.of(10, 59), UTC); timestamptz(t);
-              assertTrue(t == timestamptz())
-            } +
-            test("date") {
-              import java.time.LocalDate
-              given buf: ByteBuf = Unpooled.wrappedBuffer(Array.ofDim[Byte](2048))
-              buf.clear; var d = LocalDate.of(1945, 5, 8); date(d); assertTrue(d == date())
-              buf.clear; d = LocalDate.of(1970, 1, 1); date(d); assertTrue(d == date())
-              buf.clear; d = LocalDate.now; date(d); assertTrue(d == date())
-              buf.clear; d = LocalDate.EPOCH; date(d); assertTrue(d == date())
-              buf.clear; d = LocalDate.of(-4713, 1, 1); date(d); assertTrue(d == date())
-              buf.clear; d = LocalDate.of(5874897, 12, 31); date(d); assertTrue(d == date())
-            }
-        }
+          test("uuid") {
+            import Util.Uuid
+            given buf: ByteBuf = Unpooled.wrappedBuffer(Array.ofDim[Byte](2048))
+            buf.clear; var u = Uuid(java.util.UUID.randomUUID.nn); uuid(u); assertTrue(u == uuid())
+            buf.clear; u = Uuid(java.util.UUID.randomUUID.nn); uuid(u); assertTrue(u == uuid())
+
+          }
+      } + suite("timestamps") {
+        test("interval") {
+          import Util.Interval
+          given buf: ByteBuf = Unpooled.wrappedBuffer(Array.ofDim[Byte](2048))
+          buf.clear; var i = Interval(1970, 1, 1, 0, 0, 0); interval(i); assertTrue(i == interval())
+          buf.clear; i = Interval(2023, 4, 21, 14, 59, 59.099); interval(i); assertTrue(i == interval())
+        } +
+          test("timestamptz") {
+            import java.time.OffsetDateTime
+            import java.time.LocalDate
+            import java.time.LocalTime
+            import java.time.ZoneOffset.UTC
+            given buf: ByteBuf = Unpooled.wrappedBuffer(Array.ofDim[Byte](2048))
+            buf.clear; var t = OffsetDateTime.now(UTC); timestamptz(t); assertTrue(t == timestamptz())
+            buf.clear; t = OffsetDateTime.of(LocalDate.of(1970, 1, 1), LocalTime.of(0, 0), UTC); timestamptz(t);
+            assertTrue(t == timestamptz())
+            buf.clear; t = OffsetDateTime.of(LocalDate.of(1945, 5, 8), LocalTime.of(10, 59), UTC); timestamptz(t);
+            assertTrue(t == timestamptz())
+          } +
+          test("date") {
+            import java.time.LocalDate
+            given buf: ByteBuf = Unpooled.wrappedBuffer(Array.ofDim[Byte](2048))
+            buf.clear; var d = LocalDate.of(1945, 5, 8); date(d); assertTrue(d == date())
+            buf.clear; d = LocalDate.of(1970, 1, 1); date(d); assertTrue(d == date())
+            buf.clear; d = LocalDate.now; date(d); assertTrue(d == date())
+            buf.clear; d = LocalDate.EPOCH; date(d); assertTrue(d == date())
+            buf.clear; d = LocalDate.of(-4713, 1, 1); date(d); assertTrue(d == date())
+            buf.clear; d = LocalDate.of(5874897, 12, 31); date(d); assertTrue(d == date())
+          }
+      }
     }

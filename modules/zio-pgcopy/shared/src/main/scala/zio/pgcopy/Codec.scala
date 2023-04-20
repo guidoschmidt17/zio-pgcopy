@@ -288,10 +288,9 @@ object Codec:
   object date extends BaseCodec[LocalDate]:
     def apply()(using buf: ByteBuf) =
       buf.ignoreInt
-      var days: Int = buf.readInt
-      if days > 0 then days += 1
-      val millis: Long = (days * MillisPerDay) + Epoch
-      LocalDate.ofInstant(Instant.ofEpochMilli(millis), Utc)
+      val days: Int = buf.readInt
+      val epochmillis: Long = ((if days > 0 then days + 1 else days) * MillisPerDay) + Epoch
+      LocalDate.ofInstant(Instant.ofEpochMilli(epochmillis), Utc)
     def apply(a: LocalDate)(using buf: ByteBuf) =
       val epochmillis: Long = a.atStartOfDay.toInstant(Utc).toEpochMilli
       val days: Long = (epochmillis - Epoch) / MillisPerDay
