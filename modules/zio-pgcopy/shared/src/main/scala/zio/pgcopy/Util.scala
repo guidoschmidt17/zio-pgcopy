@@ -12,7 +12,7 @@ object Util:
 
   case class Interval(years: Int, months: Int, days: Int, hours: Int, minutes: Int, seconds: Double)
 
-  class Uuid(val uuid: UUID) extends AnyVal:
+  final class Uuid(val uuid: UUID) extends AnyVal:
 
     override def toString = uuid.toString
 

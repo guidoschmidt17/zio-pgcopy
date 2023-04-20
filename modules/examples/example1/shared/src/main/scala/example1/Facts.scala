@@ -5,17 +5,13 @@ import zio.Random.*
 import zio.*
 import zio.pgcopy.Codec.*
 import zio.pgcopy.Codec.given
+import zio.pgcopy.Util.Uuid
 import zio.pgcopy.*
-import zio.stream.*
-
-import java.time.OffsetDateTime
-
-import Util.*
 
 object Event:
   enum Category:
     case Created, Read, Updated, Deleted, Meta
-  object Category extends BiCodec(Category.valueOf(text()), text(_))
+  given Codec[Event.Category] = BiCodec(Category.valueOf(text()), text(_))
 
 case class Fact(
     aggregateid: Uuid,
@@ -27,15 +23,9 @@ case class Fact(
     tags: Array[String]
 )
 
-given Codec[Fact] = Fact
-given Codec[Event.Category] = Event.Category
+given Codec[Fact] = BiCodec[Fact](Decoder(), Encoder(_))
 
-object Fact extends Codec[Fact]:
-  def apply()(using ByteBuf): Fact =
-    Fact(uuid(), int4(), Event.Category(), uuid(), int4(), bytea(), _text())
-
-  def apply(a: Fact)(using ByteBuf): Unit = Encoder(a)
-
+object Fact:
   def randomFact(aggregateid: Uuid, aggregatelatest: Int): UIO[Fact] =
     for
       ec <- nextIntBounded(4)
@@ -52,7 +42,6 @@ object Fact extends Codec[Fact]:
       eventdata.toArray,
       tags
     )
-
   def randomFacts(n: Int): UIO[Chunk[Fact]] =
     for
       aggregateid <- nextUUID

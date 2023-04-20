@@ -8,8 +8,6 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
-import scala.annotation.switch
-import scala.annotation.targetName
 import scala.deriving.Mirror.ProductOf
 import scala.reflect.ClassTag
 
@@ -21,40 +19,34 @@ trait Encoder[A]:
 
 trait Codec[A] extends Encoder[A], Decoder[A]
 
-// @formatter:off
-/** <pre>{@code
-  *
-  * def apply() =
-  *   println()  
-  *   println()  
-  *
-  * }</pre>
-  * @param decode
-  * @param encode
-  */
-// @formatter:on
-abstract class BiCodec[A](decode: ByteBuf ?=> A, encode: A => ByteBuf ?=> Unit) extends Codec[A]:
-  inline final def apply()(using ByteBuf): A = decode
-  inline final def apply(a: A)(using ByteBuf): Unit = encode(a)
-
 object Codec:
 
-  given Encoder[EmptyTuple] with
-    def apply(e: EmptyTuple)(using ByteBuf): Unit = ()
-  given [H: Encoder, T <: Tuple: Encoder]: Encoder[H *: T] with
-    def apply(tuple: H *: T)(using ByteBuf): Unit =
-      summon[Encoder[H]](tuple.head)
-      summon[Encoder[T]](tuple.tail)
+  final class BiCodec[A](decode: ByteBuf ?=> A, encode: A => ByteBuf ?=> Unit) extends Codec[A]:
+    inline final def apply()(using ByteBuf): A = decode
+    inline final def apply(a: A)(using ByteBuf): Unit = encode(a)
+
+  object Decoder:
+    def apply[A <: Product]()(using buf: ByteBuf)(using m: ProductOf[A], d: Decoder[m.MirroredElemTypes]): A =
+      m.fromProduct(d())
+  inline given Decoder[EmptyTuple] with
+    def apply()(using ByteBuf): EmptyTuple = EmptyTuple
+  inline given [H: Decoder, T <: Tuple: Decoder]: Decoder[H *: T] with
+    def apply()(using ByteBuf): H *: T =
+      summon[Decoder[H]]() *: summon[Decoder[T]]()
 
   object Encoder:
     def apply[A <: Product](a: A)(using buf: ByteBuf)(using m: ProductOf[A], e: Encoder[m.MirroredElemTypes]): Unit =
       buf.writeShort(a.productArity)
       e(Tuple.fromProductTyped(a))
+  inline given Encoder[EmptyTuple] with
+    def apply(e: EmptyTuple)(using ByteBuf): Unit = ()
+  inline given [H: Encoder, T <: Tuple: Encoder]: Encoder[H *: T] with
+    def apply(tuple: H *: T)(using ByteBuf): Unit =
+      summon[Encoder[H]](tuple.head)
+      summon[Encoder[T]](tuple.tail)
 
-  protected sealed trait BaseDecoder[A]:
-    def apply()(using ByteBuf): A
+  protected sealed trait BaseDecoder[A] extends Decoder[A]
   protected sealed trait BaseEncoder[A] extends Encoder[A]:
-    def apply(a: A)(using ByteBuf): Unit
     final lazy val typeoid: Int = Types.get(this).getOrElse(text.typeoid)
   protected sealed trait BaseCodec[A] extends BaseEncoder[A], BaseDecoder[A]
   protected sealed trait BaseArrayCodec[A] extends BaseEncoder[Array[A]], BaseDecoder[Array[A]]
@@ -183,11 +175,9 @@ object Codec:
   object name extends BaseCodec[String]:
     def apply()(using buf: ByteBuf) =
       val len = buf.readInt
-      assert(len < 64, s"name.maxlength (63) exceeded: $len")
-      buf.readUtf8(len)
+      buf.readUtf8(math.min(len, 63))
     def apply(a: String)(using buf: ByteBuf) =
-      assert(a.length < 64, s"name.maxlength (63) exceeded: ${a.length}} $a")
-      buf.writeUtf8(a)
+      buf.writeUtf8(a.take(63))
   object char extends BaseCodec[Char]:
     def apply()(using buf: ByteBuf) =
       buf.ignoreInt
@@ -201,6 +191,8 @@ object Codec:
       buf.readUtf8(buf.readInt)
     def apply(a: String)(using buf: ByteBuf) =
       buf.writeUtf8(a)
+    def apply(a: Any)(using buf: ByteBuf) =
+      buf.writeUtf8(a.toString)
   object jsonb extends BaseCodec[String]:
     def apply()(using buf: ByteBuf) =
       val len = buf.readInt
@@ -359,7 +351,7 @@ object Codec:
     def apply(a: Array[Uuid])(using ByteBuf) = ArrayBuilder[Uuid](a, uuid)
   given BaseArrayCodec[Uuid] = _uuid
 
-  final lazy val Types: Map[BaseEncoder[?], Int] = Map(
+  final private lazy val Types: Map[BaseEncoder[?], Int] = Map(
     bool -> 16,
     bytea -> 17,
     char -> 18,
@@ -401,40 +393,39 @@ object Codec:
   )
 
   private def fromOid(oid: Int): BaseEncoder[?] =
-    println(s"fromOid $oid")
-    Types.find(_._2 == oid).map(_._1).get // .getOrElse(text)
+    Types.find(_._2 == oid).map(_._1).getOrElse(text)
 
   private[pgcopy] def nameForOid(oid: Int): String = fromOid(oid).getClass.getSimpleName match
     case n if n.endsWith("$") => n.nn.dropRight(1)
     case n                    => n
 
   extension (buf: ByteBuf)
-    inline def ignoreInt: Unit =
+    inline private[pgcopy] def ignoreInt: Unit =
       buf.readerIndex(buf.readerIndex + 4)
-    inline def ignoreArrayHeader: Unit =
+    inline private[pgcopy] def ignoreArrayHeader: Unit =
       buf.readerIndex(buf.readerIndex + 16)
-    inline def ignoreCopyOutHeader: Unit =
+    inline private[pgcopy] def ignoreCopyOutHeader: Unit =
       buf.readerIndex(buf.readerIndex + 19)
-    inline def readUtf8(len: Int): String =
+    inline private[pgcopy] def readUtf8(len: Int): String =
       String.valueOf(buf.readCharSequence(len, UTF_8))
-    inline def readUtf8z: String =
+    inline private[pgcopy] def readUtf8z: String =
       var i = buf.readerIndex
       while buf.getByte(i) != 0 do i += 1
       val res = String.valueOf(buf.readCharSequence(i - buf.readerIndex, UTF_8))
       buf.readerIndex(buf.readerIndex + 1)
       res
-    inline def readByteArray(len: Int): Array[Byte] =
+    inline private[pgcopy] def readByteArray(len: Int): Array[Byte] =
       val arr = Array.ofDim[Byte](len)
       buf.readBytes(arr, 0, len)
       arr
-    inline def readRemaining: Array[Byte] =
+    inline private[pgcopy] def readRemaining: Array[Byte] =
       buf.readByteArray(buf.readableBytes)
-    inline def writeUtf8z(s: String): ByteBuf =
+    inline private[pgcopy] def writeUtf8z(s: String): ByteBuf =
       buf.writeBytes(s.getBytes(UTF_8))
       buf.writeByte(0)
-    inline def writeUtf8s(s: String): ByteBuf =
+    inline private[pgcopy] def writeUtf8s(s: String): ByteBuf =
       buf.writeBytes(s.getBytes(UTF_8))
-    inline def writeUtf8(s: String): ByteBuf =
+    inline private[pgcopy] def writeUtf8(s: String): ByteBuf =
       val bytes = s.getBytes(UTF_8)
       val len = bytes.length
       buf.writeInt(len)

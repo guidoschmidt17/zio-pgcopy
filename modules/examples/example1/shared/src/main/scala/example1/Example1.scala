@@ -34,7 +34,7 @@ object Example1 extends ZIOAppDefault:
             _ <- ZIO.scoped(
               copy
                 .out[String, Fact](
-                  s"select aggregateid,aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags from fact order by serialid asc",
+                  s"select aggregateid,aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags from fact order by serialid desc",
                   n
                 )
                 .flatMap(_.runDrain)
@@ -42,34 +42,6 @@ object Example1 extends ZIOAppDefault:
             )
           yield ()
         loop.repeatN(19)
-
-  // private def make2(copy: Copy) =
-  //   new Example1:
-  //     def run =
-  //       import OneColumn.*
-  //       val n = 100000
-  //       val loop =
-  //         for
-  //           s <- Random.nextIntBetween(1, 100)
-  //           _ <- ZIO.sleep(s.milliseconds)
-  //           onecolumn <- random(n)
-  //           _ <- copy
-  //             .in(
-  //               s"onecolumn (id)",
-  //               ZStream.fromChunk(onecolumn).rechunk(32 * 1024)
-  //             )
-  //             .measured(s"copy.in")
-  //           _ <- ZIO.scoped(
-  //             copy
-  //               .out[String, OneColumn](
-  //                 s"select id from onecolumn",
-  //                 n
-  //               )
-  //               .flatMap(_.runDrain)
-  //               .measured(s"copy.out")
-  //           )
-  //         yield ()
-  //       loop.repeatN(19)
 
   val program =
     ZIO
