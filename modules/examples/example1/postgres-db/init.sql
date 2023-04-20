@@ -22,10 +22,6 @@ create unlogged table fact (
   tags text[] not null
   ) with (autovacuum_enabled = off);
 
-create unlogged table onecolumn (
-  id int4 not null
- ) with (autovacuum_enabled = off);
-
 -- eof
 
 commit;
