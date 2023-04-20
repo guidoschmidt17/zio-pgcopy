@@ -27,14 +27,14 @@ object Example1 extends ZIOAppDefault:
             facts <- randomFacts(n)
             _ <- copy
               .in(
-                s"fact (aggregateid,aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags,big,jb,j)",
+                s"fact(aggregateid,aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags)",
                 ZStream.fromChunk(facts).rechunk(32 * 1024)
               )
               .measured(s"copy.in")
             _ <- ZIO.scoped(
               copy
                 .out[String, Fact](
-                  s"select aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags,big,jb,j from fact order by serialid desc",
+                  s"select aggregateid,aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags from fact order by serialid asc",
                   n
                 )
                 .flatMap(_.runDrain)
@@ -43,13 +43,41 @@ object Example1 extends ZIOAppDefault:
           yield ()
         loop.repeatN(19)
 
+  // private def make2(copy: Copy) =
+  //   new Example1:
+  //     def run =
+  //       import OneColumn.*
+  //       val n = 100000
+  //       val loop =
+  //         for
+  //           s <- Random.nextIntBetween(1, 100)
+  //           _ <- ZIO.sleep(s.milliseconds)
+  //           onecolumn <- random(n)
+  //           _ <- copy
+  //             .in(
+  //               s"onecolumn (id)",
+  //               ZStream.fromChunk(onecolumn).rechunk(32 * 1024)
+  //             )
+  //             .measured(s"copy.in")
+  //           _ <- ZIO.scoped(
+  //             copy
+  //               .out[String, OneColumn](
+  //                 s"select id from onecolumn",
+  //                 n
+  //               )
+  //               .flatMap(_.runDrain)
+  //               .measured(s"copy.out")
+  //           )
+  //         yield ()
+  //       loop.repeatN(19)
+
   val program =
     ZIO
       .service[Example1]
       .provideSome[Scope](Example1.layer, Copy.layer)
       .flatMap(_.run.forkDaemon.repeatN(7))
       .catchAllCause(ZIO.logErrorCause(_))
-      *> ZIO.sleep(60.seconds)
+      *> ZIO.sleep(90.seconds)
 
   val run = program
     .withConfigProvider(ConfigProvider.defaultProvider.orElse(fromYamlString(readResourceFile("config.yml"))))

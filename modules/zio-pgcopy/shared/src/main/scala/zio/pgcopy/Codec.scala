@@ -9,27 +9,60 @@ import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import scala.annotation.switch
+import scala.annotation.targetName
+import scala.deriving.Mirror.ProductOf
 import scala.reflect.ClassTag
 
 trait Decoder[A]:
   def apply()(using ByteBuf): A
+
 trait Encoder[A]:
   def apply(a: A)(using ByteBuf): Unit
+
 trait Codec[A] extends Encoder[A], Decoder[A]
+
+// @formatter:off
+/** <pre>{@code
+  *
+  * def apply() =
+  *   println()  
+  *   println()  
+  *
+  * }</pre>
+  * @param decode
+  * @param encode
+  */
+// @formatter:on
+abstract class BiCodec[A](decode: ByteBuf ?=> A, encode: A => ByteBuf ?=> Unit) extends Codec[A]:
+  inline final def apply()(using ByteBuf): A = decode
+  inline final def apply(a: A)(using ByteBuf): Unit = encode(a)
 
 object Codec:
 
+  given Encoder[EmptyTuple] with
+    def apply(e: EmptyTuple)(using ByteBuf): Unit = ()
+  given [H: Encoder, T <: Tuple: Encoder]: Encoder[H *: T] with
+    def apply(tuple: H *: T)(using ByteBuf): Unit =
+      summon[Encoder[H]](tuple.head)
+      summon[Encoder[T]](tuple.tail)
+
+  object Encoder:
+    def apply[A <: Product](a: A)(using buf: ByteBuf)(using m: ProductOf[A], e: Encoder[m.MirroredElemTypes]): Unit =
+      buf.writeShort(a.productArity)
+      e(Tuple.fromProductTyped(a))
+
+  protected sealed trait BaseDecoder[A]:
+    def apply()(using ByteBuf): A
+  protected sealed trait BaseEncoder[A] extends Encoder[A]:
+    def apply(a: A)(using ByteBuf): Unit
+    final lazy val typeoid: Int = Types.get(this).getOrElse(text.typeoid)
+  protected sealed trait BaseCodec[A] extends BaseEncoder[A], BaseDecoder[A]
+  protected sealed trait BaseArrayCodec[A] extends BaseEncoder[Array[A]], BaseDecoder[Array[A]]
+
   import Util.*
 
-  protected sealed trait BaseEncoder[A] extends Encoder[A]:
-    final lazy val typeoid: Int = Types.get(this).get
-  protected sealed trait BaseArrayEncoder[A] extends Encoder[Array[A]]:
-    final lazy val typeoid: Int = Types.get(this).get
-  protected sealed trait BaseCodec[A] extends Codec[A], BaseEncoder[A]
-  protected sealed trait BaseArrayCodec[A] extends Codec[Array[A]], BaseArrayEncoder[A]
-
   private final class ArrayBuilder[A: ClassTag]:
-    def apply(decoder: Decoder[A])(using buf: ByteBuf): Array[A] =
+    def apply(decoder: BaseDecoder[A])(using buf: ByteBuf): Array[A] =
       buf.ignoreArrayHeader
       val len = buf.readInt
       buf.ignoreInt
@@ -46,16 +79,8 @@ object Codec:
       buf.setInt(start, buf.writerIndex - start - 4)
 
   private object ArrayBuilder:
-    def apply[A: ClassTag](decoder: Decoder[A])(using ByteBuf): Array[A] = new ArrayBuilder[A].apply(decoder)
+    def apply[A: ClassTag](decoder: BaseDecoder[A])(using ByteBuf): Array[A] = new ArrayBuilder[A].apply(decoder)
     def apply[A: ClassTag](a: Array[A], encoder: BaseEncoder[A])(using ByteBuf): Unit = new ArrayBuilder[A].apply(a, encoder)
-
-  object fields extends Encoder[Short]:
-    def apply(a: Short)(using buf: ByteBuf) =
-      buf.writeShort(a)
-    def apply(a: Int)(using buf: ByteBuf) =
-      buf.writeShort(a.toShort)
-    def apply[A <: Product](a: A)(using buf: ByteBuf) =
-      buf.writeShort(a.productIterator.filter(_ != null).length.toShort)
 
   object int2 extends BaseCodec[Short]:
     def apply()(using buf: ByteBuf) =
@@ -64,6 +89,7 @@ object Codec:
     def apply(a: Short)(using buf: ByteBuf) =
       buf.writeInt(2)
       buf.writeShort(a)
+  given BaseCodec[Short] = int2
   object int4 extends BaseCodec[Int]:
     def apply()(using buf: ByteBuf) =
       buf.ignoreInt
@@ -71,6 +97,7 @@ object Codec:
     def apply(a: Int)(using buf: ByteBuf) =
       buf.writeInt(4)
       buf.writeInt(a)
+  given BaseCodec[Int] = int4
   object int8 extends BaseCodec[Long]:
     def apply()(using buf: ByteBuf) =
       buf.ignoreInt
@@ -78,6 +105,7 @@ object Codec:
     def apply(a: Long)(using buf: ByteBuf) =
       buf.writeInt(8)
       buf.writeLong(a)
+  given BaseCodec[Long] = int8
 
   object float4 extends BaseCodec[Float]:
     def apply()(using buf: ByteBuf) =
@@ -86,6 +114,7 @@ object Codec:
     def apply(a: Float)(using buf: ByteBuf) =
       buf.writeInt(4)
       buf.writeFloat(a)
+  given BaseCodec[Float] = float4
   object float8 extends BaseCodec[Double]:
     def apply()(using buf: ByteBuf) =
       buf.ignoreInt
@@ -93,6 +122,7 @@ object Codec:
     def apply(a: Double)(using buf: ByteBuf) =
       buf.writeInt(8)
       buf.writeDouble(a)
+  given BaseCodec[Double] = float8
   object numeric extends BaseCodec[BigDecimal]:
     def apply()(using buf: ByteBuf) =
       buf.ignoreInt
@@ -110,25 +140,32 @@ object Codec:
       buf.writeShort(num.sign)
       buf.writeShort(num.scale)
       num.digits.foreach(d => buf.writeShort(d))
+  given BaseCodec[BigDecimal] = numeric
 
   object _int2 extends BaseArrayCodec[Short]:
     def apply()(using ByteBuf) = ArrayBuilder[Short](int2)
     def apply(a: Array[Short])(using ByteBuf) = ArrayBuilder[Short](a, int2)
+  given BaseArrayCodec[Short] = _int2
   object _int4 extends BaseArrayCodec[Int]:
     def apply()(using ByteBuf) = ArrayBuilder[Int](int4)
     def apply(a: Array[Int])(using ByteBuf) = ArrayBuilder[Int](a, int4)
+  given BaseArrayCodec[Int] = _int4
   object _int8 extends BaseArrayCodec[Long]:
     def apply()(using ByteBuf) = ArrayBuilder[Long](int8)
     def apply(a: Array[Long])(using ByteBuf) = ArrayBuilder[Long](a, int8)
+  given BaseArrayCodec[Long] = _int8
   object _float4 extends BaseArrayCodec[Float]:
     def apply()(using ByteBuf) = ArrayBuilder[Float](float4)
     def apply(a: Array[Float])(using ByteBuf) = ArrayBuilder[Float](a, float4)
+  given BaseArrayCodec[Float] = _float4
   object _float8 extends BaseArrayCodec[Double]:
     def apply()(using ByteBuf) = ArrayBuilder[Double](float8)
     def apply(a: Array[Double])(using ByteBuf) = ArrayBuilder[Double](a, float8)
+  given BaseArrayCodec[Double] = _float8
   object _numeric extends BaseArrayCodec[BigDecimal]:
     def apply()(using ByteBuf) = ArrayBuilder[BigDecimal](numeric)
     def apply(a: Array[BigDecimal])(using ByteBuf) = ArrayBuilder[BigDecimal](a, numeric)
+  given BaseArrayCodec[BigDecimal] = _numeric
 
   object text extends BaseCodec[String]:
     def apply()(using buf: ByteBuf) =
@@ -137,6 +174,7 @@ object Codec:
       buf.writeUtf8(a)
     def apply(a: Any)(using buf: ByteBuf) =
       buf.writeUtf8(a.toString)
+  given BaseCodec[String] = text
   object varchar extends BaseCodec[String]:
     def apply()(using buf: ByteBuf) =
       buf.readUtf8(buf.readInt)
@@ -157,6 +195,7 @@ object Codec:
     def apply(a: Char)(using buf: ByteBuf) =
       buf.writeInt(1)
       buf.writeByte(a.toByte)
+  given BaseCodec[Char] = char
   object json extends BaseCodec[String]:
     def apply()(using buf: ByteBuf) =
       buf.readUtf8(buf.readInt)
@@ -180,6 +219,7 @@ object Codec:
   object _text extends BaseArrayCodec[String]:
     def apply()(using ByteBuf) = ArrayBuilder[String](text)
     def apply(a: Array[String])(using ByteBuf) = ArrayBuilder[String](a, text)
+  given BaseArrayCodec[String] = _text
   object _varchar extends BaseArrayCodec[String]:
     def apply()(using ByteBuf) = ArrayBuilder[String](varchar)
     def apply(a: Array[String])(using ByteBuf) = ArrayBuilder[String](a, varchar)
@@ -189,6 +229,7 @@ object Codec:
   object _char extends BaseArrayCodec[Char]:
     def apply()(using ByteBuf) = ArrayBuilder[Char](char)
     def apply(a: Array[Char])(using ByteBuf) = ArrayBuilder[Char](a, char)
+  given BaseArrayCodec[Char] = _char
   object _name extends BaseArrayCodec[String]:
     def apply()(using ByteBuf) = ArrayBuilder[String](name)
     def apply(a: Array[String])(using ByteBuf) = ArrayBuilder[String](a, name)
@@ -203,9 +244,11 @@ object Codec:
       val len = a.length
       buf.writeInt(len)
       buf.writeBytes(a, 0, len)
+  given BaseCodec[Array[Byte]] = bytea
   object _bytea extends BaseArrayCodec[Array[Byte]]:
     def apply()(using ByteBuf) = ArrayBuilder[Array[Byte]](bytea)
     def apply(a: Array[Array[Byte]])(using ByteBuf) = ArrayBuilder[Array[Byte]](a, bytea)
+  given BaseArrayCodec[Array[Byte]] = _bytea
 
   inline private final val Epoch = 946684800L
   inline private final val AdjustMillis = 1000L
@@ -225,6 +268,7 @@ object Codec:
       val nanos: Long = a.getNano / AdjustMillis
       buf.writeInt(8)
       buf.writeLong(nanos + seconds)
+  given BaseCodec[OffsetDateTime] = timestamptz
   object timestamp extends BaseCodec[OffsetDateTime]:
     def apply()(using buf: ByteBuf) =
       buf.ignoreInt
@@ -240,6 +284,7 @@ object Codec:
   object _timestamptz extends BaseArrayCodec[OffsetDateTime]:
     def apply()(using ByteBuf) = ArrayBuilder[OffsetDateTime](timestamptz)
     def apply(a: Array[OffsetDateTime])(using ByteBuf) = ArrayBuilder[OffsetDateTime](a, timestamptz)
+  given BaseArrayCodec[OffsetDateTime] = _timestamptz
   object _timestamp extends BaseArrayCodec[OffsetDateTime]:
     def apply()(using ByteBuf) = ArrayBuilder[OffsetDateTime](timestamp)
     def apply(a: Array[OffsetDateTime])(using ByteBuf) = ArrayBuilder[OffsetDateTime](a, timestamp)
@@ -255,9 +300,11 @@ object Codec:
       val days: Int = ((epochmillis - Epoch) / MillisPerDay).toInt
       buf.writeInt(4)
       buf.writeInt(days)
+  given BaseCodec[LocalDate] = date
   object _date extends BaseArrayCodec[LocalDate]:
     def apply()(using ByteBuf) = ArrayBuilder[LocalDate](date)
     def apply(a: Array[LocalDate])(using ByteBuf) = ArrayBuilder[LocalDate](a, date)
+  given BaseArrayCodec[LocalDate] = _date
 
   object interval extends BaseCodec[Interval]:
     def apply()(using buf: ByteBuf) =
@@ -279,9 +326,11 @@ object Codec:
       buf.writeLong(seclong)
       buf.writeInt(a.days)
       buf.writeInt(months)
+  given BaseCodec[Interval] = interval
   object _interval extends BaseArrayCodec[Interval]:
     def apply()(using ByteBuf) = ArrayBuilder[Interval](interval)
     def apply(a: Array[Interval])(using ByteBuf) = ArrayBuilder[Interval](a, interval)
+  given BaseArrayCodec[Interval] = _interval
 
   object bool extends BaseCodec[Boolean]:
     def apply()(using buf: ByteBuf) =
@@ -291,9 +340,11 @@ object Codec:
       val T = Array[Byte](0, 0, 0, 1, 1)
       val F = Array[Byte](0, 0, 0, 1, 0)
       buf.writeBytes(if a then T else F, 0, 5)
+  given BaseCodec[Boolean] = bool
   object _bool extends BaseArrayCodec[Boolean]:
     def apply()(using ByteBuf) = ArrayBuilder[Boolean](bool)
     def apply(a: Array[Boolean])(using ByteBuf) = ArrayBuilder[Boolean](a, bool)
+  given BaseArrayCodec[Boolean] = _bool
 
   object uuid extends BaseCodec[Uuid]:
     def apply()(using buf: ByteBuf) =
@@ -302,11 +353,13 @@ object Codec:
     def apply(a: Uuid)(using buf: ByteBuf) =
       buf.writeInt(16)
       a.write(buf)
+  given BaseCodec[Uuid] = uuid
   object _uuid extends BaseArrayCodec[Uuid]:
     def apply()(using ByteBuf) = ArrayBuilder[Uuid](uuid)
     def apply(a: Array[Uuid])(using ByteBuf) = ArrayBuilder[Uuid](a, uuid)
+  given BaseArrayCodec[Uuid] = _uuid
 
-  final lazy val Types: Map[BaseEncoder[?] | BaseArrayEncoder[?], Int] = Map(
+  final lazy val Types: Map[BaseEncoder[?], Int] = Map(
     bool -> 16,
     bytea -> 17,
     char -> 18,
@@ -347,7 +400,9 @@ object Codec:
     _jsonb -> 3807
   )
 
-  private def fromOid(oid: Int): BaseEncoder[?] | BaseArrayEncoder[?] = Types.find(_._2 == oid).map(_._1).getOrElse(text)
+  private def fromOid(oid: Int): BaseEncoder[?] =
+    println(s"fromOid $oid")
+    Types.find(_._2 == oid).map(_._1).get // .getOrElse(text)
 
   private[pgcopy] def nameForOid(oid: Int): String = fromOid(oid).getClass.getSimpleName match
     case n if n.endsWith("$") => n.nn.dropRight(1)

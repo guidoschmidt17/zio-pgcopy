@@ -19,11 +19,12 @@ create unlogged table fact (
   eventid uuid not null,
   eventdatalength int4 not null,
   eventdata bytea not null,
-  tags text[] not null,
-  big numeric not null, 
-  jb jsonb not null,
-  j json not null
+  tags text[] not null
   ) with (autovacuum_enabled = off);
+
+create unlogged table onecolumn (
+  id int4 not null
+ ) with (autovacuum_enabled = off);
 
 -- eof
 

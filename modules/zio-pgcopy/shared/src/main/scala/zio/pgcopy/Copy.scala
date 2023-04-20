@@ -12,7 +12,7 @@ trait Copy:
 
   def out[E: MakeError, A: Decoder](select: String, limit: Long = Long.MaxValue): ZIO[Scope, E, ZStream[Any, E, Chunk[A]]]
 
-  def describe[E: MakeError, A](select: String): IO[E, Unit]
+  protected def describe[E: MakeError, A](select: String): IO[E, Unit]
 
 object Copy:
 

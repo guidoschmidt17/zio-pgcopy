@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf
 import zio.Random.*
 import zio.*
 import zio.pgcopy.Codec.*
+import zio.pgcopy.Codec.given
 import zio.pgcopy.*
 import zio.stream.*
 
@@ -14,65 +15,42 @@ import Util.*
 object Event:
   enum Category:
     case Created, Read, Updated, Deleted, Meta
-  inline given Conversion[String, Category] = Category.valueOf(_)
+  object Category extends BiCodec(Category.valueOf(text()), text(_))
 
 case class Fact(
-    serialid: Long | Null,
-    created: OffsetDateTime | Null,
-    aggregateid: Uuid | Null,
+    aggregateid: Uuid,
     aggregatelatest: Int,
     eventcategory: Event.Category,
     eventid: Uuid,
     eventdatalength: Int,
     eventdata: Array[Byte],
-    tags: Array[String],
-    big: BigDecimal,
-    jb: String,
-    j: String
+    tags: Array[String]
 )
 
-given Codec[Fact] = new Codec[Fact]:
-  def apply(a: Fact)(using ByteBuf): Unit =
-    import a.*
-    fields(10) // check!
-    uuid(aggregateid)
-    int4(aggregatelatest)
-    text(eventcategory)
-    uuid(eventid)
-    int4(eventdatalength)
-    bytea(eventdata)
-    _text(tags)
-    numeric(big)
-    jsonb(jb)
-    json(j)
+given Codec[Fact] = Fact
+given Codec[Event.Category] = Event.Category
 
+object Fact extends Codec[Fact]:
   def apply()(using ByteBuf): Fact =
-    val res = Fact(null, null, null, int4(), text(), uuid(), int4(), bytea(), _text(), numeric(), jsonb(), json())
-    println(res)
-    res
+    Fact(uuid(), int4(), Event.Category(), uuid(), int4(), bytea(), _text())
 
-object Fact:
+  def apply(a: Fact)(using ByteBuf): Unit = Encoder(a)
 
   def randomFact(aggregateid: Uuid, aggregatelatest: Int): UIO[Fact] =
     for
       ec <- nextIntBounded(4)
-      eventid <- nextUUID
+      eventid <- Uuid.nextUuid
       eventdatalength <- nextIntBetween(5, 100)
       eventdata <- nextBytes(eventdatalength)
       tags = Array("bla", "blabla")
     yield Fact(
-      null,
-      null,
       aggregateid,
       aggregatelatest,
       Event.Category.fromOrdinal(ec),
       eventid,
       eventdatalength,
       eventdata.toArray,
-      tags,
-      BigDecimal("3.1452e-21"),
-      s"[42, true,      null, 3.14]",
-      s"[42, true,      null, 3.15]"
+      tags
     )
 
   def randomFacts(n: Int): UIO[Chunk[Fact]] =

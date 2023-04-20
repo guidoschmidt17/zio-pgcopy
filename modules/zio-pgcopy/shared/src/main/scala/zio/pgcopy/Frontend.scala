@@ -140,4 +140,4 @@ private object FrontendMessage:
 
   private final val Header: Array[Byte] = "PGCOPY".getBytes.nn ++ Array(0x0a, 0xff, 0x0d, 0x0a, 0, 0, 0, 0, 0, 0, 0, 0, 0).map(_.toByte)
 
-  private[pgcopy] final var ByteBufInitialSize = -1
+  private[pgcopy] final var ByteBufInitialSize = 32 * 1024
