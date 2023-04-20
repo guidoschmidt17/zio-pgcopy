@@ -15,17 +15,23 @@ Global / onChangedBuildSource := ReloadOnSourceChanges
 
 logLevel := Level.Warn
 
+name := "zio-pgcopy"
+
 lazy val `zio-pgcopy` =
   crossProject(JVMPlatform)
     .crossType(CrossType.Full)
     .in(file("modules/zio-pgcopy"))
     .settings(commonSettings)
-    .settings(commonDependencies)
     .settings(
       libraryDependencies ++= Seq(
         "dev.zio" %%% "zio" % "2.0.13",
-        "dev.zio" %%% "zio-streams" % "2.0.13"
-      )
+        "dev.zio" %%% "zio-streams" % "2.0.13",
+        "dev.zio" %%% "zio-test" % "2.0.13" % Test,
+        "dev.zio" %%% "zio-test-sbt" % "2.0.13" % Test
+      ),
+      testFrameworks := Seq(new TestFramework("zio.test.sbt.ZTestFramework")),
+      Test / fork := true,
+      run / fork := true
     )
     .jvmSettings(
       libraryDependencies ++= Seq(
@@ -40,7 +46,6 @@ lazy val `example-1` =
     .in(file("modules/examples/example1"))
     .dependsOn(`zio-pgcopy` % Cctt)
     .settings(commonSettings)
-    .settings(commonDependencies)
     .settings(
       libraryDependencies ++= Seq(
         "dev.zio" %%% "zio-config" % "4.0.0-RC14",
@@ -57,16 +62,4 @@ lazy val `example-1` =
       }
     )
 
-lazy val commonSettings = Seq(
-  Test / console / scalacOptions :=
-    (Compile / console / scalacOptions).value
-)
-
-lazy val commonDependencies = Seq(
-  libraryDependencies ++= Seq(
-    "org.scalacheck" %% "scalacheck" % "1.17.0",
-    "org.scalatest" %% "scalatest" % "3.2.15",
-    "org.scalatestplus" %% "scalacheck-1-15" % "3.2.11.0",
-    "org.typelevel" %% "discipline-scalatest" % "2.2.0"
-  ).map(_ % Test)
-)
+lazy val commonSettings = Seq(Test / console / scalacOptions := (Compile / console / scalacOptions).value)

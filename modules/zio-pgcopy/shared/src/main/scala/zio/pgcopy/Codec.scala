@@ -74,6 +74,10 @@ object Codec:
     def apply[A: ClassTag](decoder: BaseDecoder[A])(using ByteBuf): Array[A] = new ArrayBuilder[A].apply(decoder)
     def apply[A: ClassTag](a: Array[A], encoder: BaseEncoder[A])(using ByteBuf): Unit = new ArrayBuilder[A].apply(a, encoder)
 
+  object fields:
+    def apply[A <: Product](a: A)(using buf: ByteBuf): Unit =
+      buf.writeShort(a.productArity)
+
   object int2 extends BaseCodec[Short]:
     def apply()(using buf: ByteBuf) =
       buf.ignoreInt
@@ -245,7 +249,7 @@ object Codec:
   inline private final val Epoch = 946684800L
   inline private final val AdjustMillis = 1000L
   inline private final val AdjustNanos = 1000000L
-  inline private final val MillisPerDay = 8640000L
+  inline private final val MillisPerDay = 86400000L
   inline private final def Utc = ZoneOffset.UTC
 
   object timestamptz extends BaseCodec[OffsetDateTime]:
@@ -284,14 +288,15 @@ object Codec:
   object date extends BaseCodec[LocalDate]:
     def apply()(using buf: ByteBuf) =
       buf.ignoreInt
-      val days = buf.readInt
+      var days: Int = buf.readInt
+      if days > 0 then days += 1
       val millis: Long = (days * MillisPerDay) + Epoch
       LocalDate.ofInstant(Instant.ofEpochMilli(millis), Utc)
     def apply(a: LocalDate)(using buf: ByteBuf) =
       val epochmillis: Long = a.atStartOfDay.toInstant(Utc).toEpochMilli
-      val days: Int = ((epochmillis - Epoch) / MillisPerDay).toInt
+      val days: Long = (epochmillis - Epoch) / MillisPerDay
       buf.writeInt(4)
-      buf.writeInt(days)
+      buf.writeInt(days.toInt)
   given BaseCodec[LocalDate] = date
   object _date extends BaseArrayCodec[LocalDate]:
     def apply()(using ByteBuf) = ArrayBuilder[LocalDate](date)
@@ -299,20 +304,21 @@ object Codec:
   given BaseArrayCodec[LocalDate] = _date
 
   object interval extends BaseCodec[Interval]:
+    inline private final val scale = 1000000d
     def apply()(using buf: ByteBuf) =
       buf.ignoreInt
       val seclong = buf.readLong
       val days = buf.readInt
       val months = buf.readInt
-      val sec: Double = seclong / 1000000d
-      val hours: Int = (sec / (60 * 60)).toInt
-      val minutes: Int = (sec / 60).toInt - (60 * hours)
-      val seconds: Double = sec - (60 * minutes) - (60 * 60 * hours)
+      val sec: Double = seclong / scale
+      val hours: Int = (sec / (60d * 60d)).toInt
+      val minutes: Int = (sec / 60d).toInt - (60 * hours)
+      val seconds: Double = math.rint((sec - (60d * minutes) - (60d * 60d * hours)) * scale) / scale
       val years: Int = months / 12
       Interval(years, months - (12 * years), days, hours, minutes, seconds)
     def apply(a: Interval)(using buf: ByteBuf) =
-      val sec: Double = a.seconds + (60 * a.minutes) + (60 * 60 * a.hours)
-      val seclong: Long = (1000000d * sec).toLong
+      val sec: Double = a.seconds + (60d * a.minutes) + (60d * 60d * a.hours)
+      val seclong: Long = math.round(sec * scale)
       val months: Int = a.months + (12 * a.years)
       buf.writeInt(16)
       buf.writeLong(seclong)
