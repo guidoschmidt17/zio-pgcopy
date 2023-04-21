@@ -28,7 +28,8 @@ lazy val `zio-pgcopy` =
         "dev.zio" %%% "zio-streams" % "2.0.13",
         "dev.zio" %%% "zio-test" % "2.0.13" % Test,
         "dev.zio" %%% "zio-test-sbt" % "2.0.13" % Test
-      )
+      ),
+      testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework")
     )
     .jvmSettings(
       libraryDependencies ++= Seq(

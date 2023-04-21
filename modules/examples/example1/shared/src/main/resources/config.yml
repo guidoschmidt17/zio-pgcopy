@@ -9,8 +9,8 @@ zio-pgcopy:
     password       : banana
 
   pool:
-    min            : 1
-    max            : 8
+    min            : 16
+    max            : 16
     timeout        : 15.minutes
 
   retry:
@@ -24,9 +24,3 @@ zio-pgcopy:
     bytebufsize    : 8388608
     incomingsize   : 8192
     outgoingsize   : 4096
-
-example1:
-  copy-in:  
-    rows           : 100000
-    repeats        : 0
-  

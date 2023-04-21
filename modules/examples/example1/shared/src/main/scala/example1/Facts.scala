@@ -1,12 +1,10 @@
 package example1
 
 import io.netty.buffer.ByteBuf
-import zio.Random.*
 import zio.*
-import zio.pgcopy.Codec.*
-import zio.pgcopy.Codec.given
-import zio.pgcopy.Util.Uuid
 import zio.pgcopy.*
+import zio.pgcopy.given
+import zio.pgcopy.Util.Uuid
 
 object Event:
   enum Category:
@@ -27,9 +25,10 @@ given Codec[Fact] = BiCodec[Fact](Decoder(), Encoder(_))
 
 object Fact:
   def randomFact(aggregateid: Uuid, aggregatelatest: Int): UIO[Fact] =
+    import Random.*
     for
       ec <- nextIntBounded(4)
-      eventid <- Uuid.nextUuid
+      eventid = aggregateid
       eventdatalength <- nextIntBetween(5, 100)
       eventdata <- nextBytes(eventdatalength)
       tags = Array("bla", "blabla")
@@ -44,6 +43,6 @@ object Fact:
     )
   def randomFacts(n: Int): UIO[Chunk[Fact]] =
     for
-      aggregateid <- nextUUID
+      aggregateid <- Uuid.nextUuid
       facts <- ZIO.foreach(Range(0, n))(aggregatelatest => randomFact(aggregateid, aggregatelatest))
     yield Chunk.fromIterable(facts)
