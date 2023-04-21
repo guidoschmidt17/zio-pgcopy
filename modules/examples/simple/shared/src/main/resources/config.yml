@@ -1,0 +1,27 @@
+
+zio-pgcopy:
+  server:
+    host           : localhost
+    port           : 5433
+    sslmode        : disable # disable | trust | runtime 
+    database       : simple
+    user           : jimmy
+    password       : banana
+
+  pool:
+    min            : 32
+    max            : 32
+    timeout        : 15.minutes
+
+  retry:
+    base           : 200.milliseconds
+    factor         : 1.33
+    retries        : 20
+
+  io:
+    so_sndbuf      : 32768 
+    so_rcvbuf      : 32768
+    bytebufsize    : 1000000
+    checksize      : false  
+    incomingsize   : 32768
+    outgoingsize   : 32768

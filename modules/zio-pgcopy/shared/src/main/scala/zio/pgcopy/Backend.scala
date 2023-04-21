@@ -131,7 +131,7 @@ private object BackendMessage:
   object CopyData extends Decoder[CopyData]:
     inline final val Tag = 'd'
     def apply()(using buf: ByteBuf) =
-      CopyData(buf.readShort, buf.retain(1).nn)
+      CopyData(buf.readShort, buf.retain(1))
 
   case object CopyDone extends BackendMessage, Decoder[CopyDone.type]:
     inline final val Tag = 'c'

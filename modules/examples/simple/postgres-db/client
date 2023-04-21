@@ -1,0 +1,2 @@
+#!/bin/bash
+docker exec -it postgres-simple psql -h localhost -U jimmy -d simple

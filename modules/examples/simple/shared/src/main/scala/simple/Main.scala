@@ -1,4 +1,4 @@
-package facts
+package simple
 
 import zio.*
 import zio.config.yaml.YamlConfigProvider.fromYamlString
@@ -14,19 +14,21 @@ object Main extends ZIOAppDefault:
 
   given MakeError[String] = _.toString
 
-  val sessions = 9
+  val sessions = 19
   val repeats = 29
 
   private def make(copy: Copy) = new Main:
     def run =
-      import Fact.*
+      import Simple.*
       val n = 100000
-      val in = s"fact(aggregateid,aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags)"
-      val out = s"select aggregateid,aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags from fact"
+      val in = s"simple(i)"
+      val out = s"select i from simple"
       val loop = for
-        f <- randomFacts(n)
-        _ <- copy.in(in, ZStream.fromChunk(f).rechunk(32 * 1024)).measured(s"copy.in")
-        _ <- ZIO.scoped(copy.out[String, Fact](out, n).flatMap(_.runDrain).measured(s"copy.out"))
+        i <- Random.nextIntBetween(5, 100)
+        _ <- ZIO.sleep(i.milliseconds)
+        // f <- randomSimples(n)
+        // _ <- copy.in(in, ZStream.fromChunk(f)).measured(s"copy.in")
+        _ <- ZIO.scoped(copy.out[String, Simple](out, n).flatMap(_.runDrain).measured(s"copy.out"))
       yield ()
       loop.repeatN(repeats)
 
@@ -35,8 +37,9 @@ object Main extends ZIOAppDefault:
     .provideSome[Scope](Main.layer, Copy.layer)
     .flatMap(_.run.forkDaemon.repeatN(sessions))
     .catchAllCause(ZIO.logErrorCause(_))
-    *> ZIO.sleep(90.seconds)
+    *> ZIO.sleep(30.seconds) *> ZIO.debug(s"shutdown")
 
   val run = program
+    .withRuntimeFlags(RuntimeFlags.disable(RuntimeFlag.FiberRoots))
     .withConfigProvider(ConfigProvider.defaultProvider.orElse(fromYamlString(readResourceFile("config.yml"))))
     .exitCode

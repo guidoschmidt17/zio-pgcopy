@@ -410,7 +410,7 @@ object Codec:
     inline private[pgcopy] def ignoreArrayHeader: Unit =
       buf.readerIndex(buf.readerIndex + 16)
     inline private[pgcopy] def ignoreCopyOutHeader: Unit =
-      buf.readerIndex(buf.readerIndex + 19)
+      if buf.readableBytes >= 23 then buf.readerIndex(buf.readerIndex + 19)
     inline private[pgcopy] def readUtf8(len: Int): String =
       String.valueOf(buf.readCharSequence(len, UTF_8))
     inline private[pgcopy] def readUtf8z: String =

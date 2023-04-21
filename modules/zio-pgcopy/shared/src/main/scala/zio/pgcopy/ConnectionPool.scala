@@ -20,6 +20,7 @@ import zio.stream.*
 import java.nio.charset.StandardCharsets.UTF_8
 import java.security.KeyStore
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import javax.net.ssl.TrustManagerFactory
 import scala.annotation.switch
@@ -39,17 +40,6 @@ private case class Connection[E: MakeError](
     private val config: Configuration
 ):
 
-  def copyOut[A: Decoder](query: String)(using makeError: MakeError[E]) =
-    for
-      _ <- send(Query(s"copy ($query) to stdout with binary"))
-      _ <- receiveUntil(CopyingOut)
-    yield instream
-      .map(handleCopyOut(_))
-      .flattenTake
-      .rechunk(incoming.capacity)
-      .chunks
-      .concat(if isClosed then ZStream.fail(makeError(s"broken pipe $this")) else ZStream.empty)
-
   def copyIn[A: Encoder](tableexpression: String, rows: Chunk[A]) =
     for
       _ <- send(Query(s"copy $tableexpression from stdout with binary"))
@@ -58,6 +48,17 @@ private case class Connection[E: MakeError](
       _ <- send(FrontendMessage.CopyDone())
       _ <- receiveUntil(Idle)
     yield ()
+
+  def copyOut[A: Decoder](query: String)(using makeError: MakeError[E]) =
+    for
+      _ <- send(Query(s"copy ($query) to stdout with binary"))
+      _ <- receiveUntil(ExpectingOut)
+    yield instream
+      .map(handleCopyOut(_))
+      .flattenTake
+      .rechunk(incoming.capacity)
+      .chunks
+      .concat(if isClosed then ZStream.fail(makeError(s"broken pipe $this")) else ZStream.empty)
 
   def describe[A](query: String) =
     for
@@ -110,7 +111,7 @@ private case class Connection[E: MakeError](
     startup *> ZIO
       .attempt(channel.writeAndFlush(message.payload).sync)
       .catchAllDefect(ZIO.fail(_))
-      .catchAll(e => ZIO.fail(makeError(e)))
+      .catchAll(e => close *> ZIO.fail(makeError(e)))
       .unit
 
   private def receiveUntil(status: Status): IO[E, Unit] =
@@ -118,27 +119,26 @@ private case class Connection[E: MakeError](
 
   private def handleCopyOut[A: Decoder](message: BackendMessage)(using makeError: MakeError[E]): Take[E, A] =
     import BackendMessage.*
-    inline def decode(data: ByteBuf)(using decoder: Decoder[A]) =
-      given ByteBuf = data
-      try Take.single(decoder())
+    def decode(data: ByteBuf)(using decoder: Decoder[A]) =
+      try
+        given ByteBuf = data
+        Take.single(decoder())
       finally data.release(1)
     message match
-      case CopyData(_, data) if isNotHeader               => decode(data)
-      case CopyData(_, data)                              => data.ignoreCopyOutHeader; isNotHeader = true; decode(data)
+      case CopyData(_, data) if getStatus == CopyingOut   => decode(data)
+      case CopyData(_, data) if getStatus == ExpectingOut => status.set(CopyingOut); data.ignoreCopyOutHeader; decode(data)
       case CopyDataFooter | CopyDone | CommandComplete(_) => Take.chunk(Chunk.empty)
       case ReadyForQuery(i) if i == 'I'                   => Take.end
-      case _                                              => Take.fail(makeError(message))
+      case _                                              => Take.fail(makeError(s"status : ${getStatus}, message: $message"))
 
   private def handleMessage(message: BackendMessage)(using makeError: MakeError[E]): IO[E, Unit] =
-    import config.server.user
-    import config.server.password
-    // if !message.isInstanceOf[BackendMessage.CopyData] then println(s"$message")
+    import config.server.*
     message match
-      case CopyOutResponse(_, _, _)         => isNotHeader = false; setStatus(CopyingOut)
+      case CopyOutResponse(_, _, _)         => setStatus(ExpectingOut)
       case CopyInResponse(_, _, _)          => setStatus(CopyingIn)
       case CommandComplete(_)               => setStatus(CommandCommpleted)
       case CloseComplete                    => setStatus(Prepared)
-      case ErrorResponse(errors)            => ZIO.debug(s"$errors") *> ZIO.fail(makeError(errors))
+      case ErrorResponse(errors)            => close *> ZIO.fail(makeError(errors.mkString(", ")))
       case ParameterStatus(name, value)     => ZIO.succeed { parameters += name -> value }
       case BackendKeyData(pid, secret)      => ZIO.succeed { keydata = (pid, secret) }
       case AuthenticationOk                 => setStatus(Connected)
@@ -193,12 +193,12 @@ private case class Connection[E: MakeError](
   private final var indicator = 0.toChar
   private final var scramsession: ScramSession | Null = null
   private final var scramclientfinal: ScramSession#ClientFinalProcessor | Null = null
-  private final var isNotHeader = true
 
 private object Connection:
 
   enum Status:
-    case NotConnected, Connecting, Connected, Idle, NotIdle, Failed, Prepared, CopyingOut, CopyingIn, CommandCommpleted, Closed
+    case NotConnected, Connecting, Connected, Idle, NotIdle, Failed, Prepared, ExpectingOut, CopyingOut, CopyingIn, CommandCommpleted,
+      Closed
 
 private case class ConnectionPool[E: MakeError] private (
     private val zpool: Ref[ZPool[E, Connection[E]] | Null],
@@ -216,28 +216,33 @@ private case class ConnectionPool[E: MakeError] private (
   def invalidate(connection: Connection[E]) =
     zpool.get.flatMap(_.invalidate(connection))
 
+  // private final val counter = AtomicInteger(0)
+
   private def acquire(using makeError: MakeError[E]): IO[E, Connection[E]] =
     val loop = for
       incoming: Incoming <- Queue.bounded(incomingsize)
       channelfuture = bootstrap.connect
       connection = Connection[E](channelfuture, incoming, this, config)
       _ = channelfuture.sync.channel.pipeline.addLast(ProtocolHandler(connection))
+      _ <- ZIO.yieldNow
+    // _ <- ZIO.debug(s"acquired ${counter.incrementAndGet}")
     yield connection
     loop
-      .catchAllDefect(e => ZIO.debug(e) *> ZIO.fail(e))
-      .retry(RetrySchedule)
+      .catchAllDefect(e => ZIO.fail(e))
+      .retry(RetrySchedule(s"acquire"))
       .catchAll(e => ZIO.fail(makeError(e)))
 
   private def release[E](connection: Connection[E]): UIO[Unit] =
-    connection.close.ignore
+    // ZIO.debug(s"released ${counter.decrementAndGet}") *>
+    ZIO.yieldNow *> connection.close.ignore
 
-  private[pgcopy] final val RetrySchedule =
+  private[pgcopy] final def RetrySchedule(message: String) =
     Schedule.exponential(base, factor) && Schedule
       .recurs(math.max(0, retries - 1))
       .onDecision((state, out, decision) =>
         decision match
-          case Schedule.Decision.Continue(intervals) => ZIO.debug(s"pgcopy/connectionpool : retries $state/${retries} ")
-          case Schedule.Decision.Done                => ZIO.debug(s"pgcopy/connectionpool : retries failed $state/${retries} ")
+          case Schedule.Decision.Continue(intervals) => ZIO.debug(s"zio-pgcopy/connectionpool : retries $state/${retries} : $message")
+          case Schedule.Decision.Done => ZIO.debug(s"zio-pgcopy/connectionpool : retries failed $state/${retries} : $message")
       )
 
 private object ConnectionPool:
@@ -247,8 +252,11 @@ private object ConnectionPool:
       ref: Ref[ZPool[E, Connection[E]] | Null] <- Ref.make(null)
       config <- ZIO.config(Copy.config)
       pool <- ZIO.succeed(ConnectionPool(ref, bootstrap(config), config))
-      get = ZIO.acquireRelease(pool.acquire)(pool.release)
-      zpool <- ZPool.make(get, Range.inclusive(config.pool.min, config.pool.max), config.pool.timeout)
+      zpool <- ZPool.make(
+        ZIO.acquireRelease(pool.acquire)(pool.release),
+        Range.inclusive(config.pool.min, config.pool.max),
+        config.pool.timeout
+      )
       _ <- ref.setAsync(zpool)
     yield pool
 

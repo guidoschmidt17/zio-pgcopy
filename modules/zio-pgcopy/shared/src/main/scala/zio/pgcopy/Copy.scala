@@ -28,41 +28,45 @@ object Copy:
 
   private def make[E: MakeError](pool: ConnectionPool[E], config: Configuration) = new Copy:
 
-    FrontendMessage.ByteBufInitialSize = config.io.bytebufsize
+    FrontendMessage.ioConfig = config.io
 
     def in[E: MakeError, A: Encoder](insert: String, instream: ZStream[Any, E, A]) =
       inline def copy(rows: Chunk[A])(using makeError: MakeError[E]) =
         ZIO
           .scoped(pool.get.flatMap(_.copyIn(insert, rows)))
           .catchAllDefect(ZIO.fail(_))
-          .retry(pool.RetrySchedule)
+          .retry(pool.RetrySchedule("in"))
           .catchAll(e => ZIO.fail(makeError(e)))
       instream.chunks.tap(copy(_)).runDrain
 
     def out[E: MakeError, A: Decoder](select: String, limit: Long) =
-      def loopResult(out: Queue[Take[E, Chunk[A]]], offsetRef: Ref[Long], n: Long) =
-        def resultStream(offset: Long, limit: Long) =
+      inline def copy(using makeError: MakeError[E]) =
+        def loopResult(out: Queue[Take[E, Chunk[A]]], offsetRef: Ref[Long], n: Long) =
+          def resultStream(offset: Long, limit: Long) =
+            for
+              connection <- pool.get
+              stream <- connection.copyOut[A](s"$select offset $offset limit $limit")
+            yield stream.tap(c => out.offer(Take.single(c)).flatMap(_ => offsetRef.update(_ + c.size)))
           for
-            connection <- pool.get
-            stream <- connection.copyOut[A](s"$select offset $offset limit $limit")
-          yield stream.tap(c => out.offer(Take.single(c)).flatMap(_ => offsetRef.update(_ + c.size)))
+            offset <- offsetRef.get
+            result <- resultStream(offset, n - offset)
+            _ <- result.runDrain
+          yield ()
         for
-          offset <- offsetRef.get
-          result <- resultStream(offset, n - offset)
-          _ <- result.runDrain
-        yield ()
-      for
-        offset: Ref[Long] <- Ref.make(0L)
-        out: Queue[Take[E, Chunk[A]]] <- Queue.bounded(config.io.outgoingsize)
-        outstream = ZStream
-          .fromQueue(out, out.capacity)
-          .flattenTake
-        _ <- loopResult(out, offset, limit)
-          .catchAllDefect(ZIO.fail(_))
-          .retry(pool.RetrySchedule)
-          .ensuring(out.offer(Take.end))
-          .forkScoped
-      yield outstream
+          offset: Ref[Long] <- Ref.make(0L)
+          out: Queue[Take[E, Chunk[A]]] <- Queue.bounded(config.io.outgoingsize)
+          outstream = ZStream
+            .fromQueue(out, out.capacity)
+            .flattenTake
+          _ <- loopResult(out, offset, limit)
+            .catchAllCause(c => ZIO.logErrorCause(c) *> ZIO.fail(c))
+            .catchAllDefect(ZIO.debug(s"never come here") *> ZIO.fail(_))
+            .retry(pool.RetrySchedule(s"copy.out"))
+            .catchAll(e => ZIO.fail(makeError(e)))
+            .ensuring(out.offer(Take.end))
+            .forkScoped
+        yield outstream
+      copy
 
     def describe[E: MakeError, A](select: String) =
       inline def prepare(using makeError: MakeError[E]) =
@@ -100,10 +104,11 @@ object Copy:
     val so_sndbuf = Config.int("so_sndbuf").map(Util.ceilPower2(_)).withDefault(32 * 1024)
     val so_rcvbuf = Config.int("so_rcvbuf").map(Util.ceilPower2(_)).withDefault(32 * 1024)
     val bytebufsize = Config.int("bytebufsize").map(Util.ceilPower2(_)).withDefault(128 * 1024)
+    val checksize = Config.boolean("checksize").withDefault(false)
     val incomingsize = Config.int("incomingsize").map(Util.ceilPower2(_)).withDefault(8 * 1024)
     val outgoingsize = Config.int("outgoingsize").map(Util.ceilPower2(_)).withDefault(4 * 1024)
-    val io = (so_rcvbuf ++ so_sndbuf ++ bytebufsize ++ incomingsize ++ outgoingsize)
-      .map((a, b, c, d, e) => IoConfig(a, b, c, d, e))
+    val io = (so_rcvbuf ++ so_sndbuf ++ bytebufsize ++ checksize ++ incomingsize ++ outgoingsize)
+      .map((a, b, c, d, e, f) => IoConfig(a, b, c, d, e, f))
       .nested(("io"))
 
     (server ++ pool ++ retry ++ io).nested("zio-pgcopy").map((a, b, c, d) => Configuration(a, b, c, d))
@@ -118,5 +123,5 @@ private case class ServerConfig(
 )
 private case class PoolConfig(min: Int, max: Int, timeout: Duration)
 private case class RetryConfig(base: Duration, factor: Double, retries: Int)
-private case class IoConfig(so_rcvbuf: Int, so_sndbuf: Int, bytebufsize: Int, incomingsize: Int, outgoingsize: Int)
+private case class IoConfig(so_rcvbuf: Int, so_sndbuf: Int, bytebufsize: Int, checksize: Boolean, incomingsize: Int, outgoingsize: Int)
 private case class Configuration(server: ServerConfig, pool: PoolConfig, retry: RetryConfig, io: IoConfig)

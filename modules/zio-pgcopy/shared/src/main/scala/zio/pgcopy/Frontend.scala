@@ -4,6 +4,7 @@ package pgcopy
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.PooledByteBufAllocator
 import zio.Chunk
+import zio.*
 
 import java.nio.charset.StandardCharsets.UTF_8
 import java.security.MessageDigest
@@ -13,7 +14,7 @@ import FrontendMessage.*
 
 private sealed trait FrontendMessage:
   val payload: ByteBuf
-  protected val buf: ByteBuf = PooledByteBufAllocator.DEFAULT.directBuffer(ByteBufInitialSize)
+  protected val buf: ByteBuf = PooledByteBufAllocator.DEFAULT.directBuffer(bytebufsize)
   protected def lengthPrefixed(i: Int, p: ByteBuf): ByteBuf =
     buf.setInt(i, p.writerIndex - i)
 
@@ -133,11 +134,16 @@ private object FrontendMessage:
     override def toString = s"CopyOut(${rows.size})"
     val payload =
       given ByteBuf = buf
+      val b = if checksize then buf.capacity else 0
       buf.writeBytes(Header, 0, Header.length)
       rows.foreach(encoder(_))
       buf.writeShort(-1)
+      if checksize then if buf.capacity > b then println(s"warning: enlarge 'io.bytebufsize', $b -> ${buf.capacity}")
       lengthPrefixed(buf)
 
   private final val Header: Array[Byte] = "PGCOPY".getBytes.nn ++ Array(0x0a, 0xff, 0x0d, 0x0a, 0, 0, 0, 0, 0, 0, 0, 0, 0).map(_.toByte)
 
-  private[pgcopy] final var ByteBufInitialSize = 32 * 1024
+  private[pgcopy] final var ioConfig: IoConfig | Null = null
+
+  private final lazy val bytebufsize = ioConfig.nn.bytebufsize
+  private final lazy val checksize = ioConfig.nn.checksize
