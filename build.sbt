@@ -1,12 +1,11 @@
 import CustomUtil._
-import org.scalajs.linker.interface.ModuleInitializer
-import org.scalajs.linker.interface.ModuleSplitStyle
-import org.scalajs.linker.interface.OutputPatterns
 
 ThisBuild / organization := "zio-pgcopy"
 ThisBuild / licenses := Seq(License.Apache2)
-ThisBuild / developers := List(Developer("guidoschmidt17", "Guido Schmidt", "", url("https://github.com/guidoschmidt17/eventsourcing-3")))
+ThisBuild / developers := List(Developer("guidoschmidt17", "Guido Schmidt", "", url("https://github.com/guidoschmidt17/zio-pgcopy")))
 ThisBuild / scalaVersion := "3.2.2"
+
+ThisBuild / version := "0.1.0"
 
 ThisBuild / showSuccess := false
 
@@ -17,6 +16,11 @@ logLevel := Level.Warn
 
 name := "zio-pgcopy"
 
+val ZioVersion = "2.0.13"
+val ZioConfigVersion = "4.0.0-RC14"
+val NettyVersion = "4.1.91.Final"
+val ScramVersion = "2.1"
+
 lazy val `zio-pgcopy` =
   crossProject(JVMPlatform)
     .crossType(CrossType.Full)
@@ -24,34 +28,34 @@ lazy val `zio-pgcopy` =
     .settings(commonSettings)
     .settings(
       libraryDependencies ++= Seq(
-        "dev.zio" %%% "zio" % "2.0.13",
-        "dev.zio" %%% "zio-streams" % "2.0.13",
-        "dev.zio" %%% "zio-test" % "2.0.13" % Test,
-        "dev.zio" %%% "zio-test-sbt" % "2.0.13" % Test
+        "dev.zio" %%% "zio" % ZioVersion,
+        "dev.zio" %%% "zio-streams" % ZioVersion,
+        "dev.zio" %%% "zio-test" % ZioVersion % Test,
+        "dev.zio" %%% "zio-test-sbt" % ZioVersion % Test
       ),
       testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework")
     )
     .jvmSettings(
       libraryDependencies ++= Seq(
-        "io.netty" % "netty-all" % "4.1.91.Final",
-        "com.ongres.scram" % "client" % "2.1"
+        "io.netty" % "netty-all" % NettyVersion,
+        "com.ongres.scram" % "client" % ScramVersion
       )
     )
 
-lazy val `example-1` =
+lazy val `facts` =
   crossProject(JVMPlatform)
     .crossType(CrossType.Full)
-    .in(file("modules/examples/example1"))
+    .in(file("modules/examples/facts"))
     .dependsOn(`zio-pgcopy` % Cctt)
     .settings(commonSettings)
     .settings(
       libraryDependencies ++= Seq(
-        "dev.zio" %%% "zio-config" % "4.0.0-RC14",
-        "dev.zio" %%% "zio-config-yaml" % "4.0.0-RC14"
+        "dev.zio" %%% "zio-config" % ZioConfigVersion,
+        "dev.zio" %%% "zio-config-yaml" % ZioConfigVersion
       )
     )
     .settings(
-      assembly / mainClass := Some("example1.Example1")
+      assembly / mainClass := Some("facts.Main")
     )
     .jvmSettings(
       assembly / assemblyMergeStrategy := {

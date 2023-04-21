@@ -4,11 +4,11 @@ networks:
 
 services:
   world:
-    container_name: postgres-example1
+    container_name: postgres-facts
     image: postgres:15.2-bullseye
     restart: always
     environment:
-      POSTGRES_DB: world
+      POSTGRES_DB: facts
       POSTGRES_USER: jimmy
       POSTGRES_PASSWORD: banana
       POSTGRES_HOST_AUTH_METHOD: scram-sha-256

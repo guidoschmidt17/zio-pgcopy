@@ -2,7 +2,7 @@ begin;
 
 -- increase write performance
 
-alter database world set synchronous_commit to off;
+alter database facts set synchronous_commit to off;
 
 -- types
 

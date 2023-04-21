@@ -4,7 +4,7 @@ zio-pgcopy:
     host           : localhost
     port           : 5432
     sslmode        : disable # disable | trust | runtime 
-    database       : world
+    database       : facts
     user           : jimmy
     password       : banana
 

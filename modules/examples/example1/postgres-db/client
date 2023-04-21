@@ -1,2 +1,0 @@
-#!/bin/bash
-docker exec -it postgres-example1 psql -h localhost -U jimmy -d world

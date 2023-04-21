@@ -1,0 +1,2 @@
+#!/bin/bash
+docker exec -it postgres-facts psql -h localhost -U jimmy -d facts

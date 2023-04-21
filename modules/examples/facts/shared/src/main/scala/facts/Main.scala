@@ -1,14 +1,14 @@
-package example1
+package facts
 
 import zio.*
 import zio.config.yaml.YamlConfigProvider.fromYamlString
 import zio.pgcopy.*
 import zio.stream.*
 
-trait Example1:
+trait Main:
   def run: ZIO[Scope, Any, Unit]
 
-object Example1 extends ZIOAppDefault:
+object Main extends ZIOAppDefault:
 
   lazy val layer = ZLayer.fromFunction(make)
 
@@ -18,7 +18,7 @@ object Example1 extends ZIOAppDefault:
   val repeats = 29
 
   private def make(copy: Copy) =
-    new Example1:
+    new Main:
       def run =
         import Fact.*
         val n = 100000
@@ -33,8 +33,8 @@ object Example1 extends ZIOAppDefault:
         loop.repeatN(repeats)
 
   val program = ZIO
-    .service[Example1]
-    .provideSome[Scope](Example1.layer, Copy.layer)
+    .service[Main]
+    .provideSome[Scope](Main.layer, Copy.layer)
     .flatMap(_.run.forkDaemon.repeatN(sessions))
     .catchAllCause(ZIO.logErrorCause(_))
     *> ZIO.sleep(90.seconds)

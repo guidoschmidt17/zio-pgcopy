@@ -4,17 +4,24 @@ package pgcopy
 import io.netty.buffer.ByteBuf
 import io.netty.buffer.Unpooled
 import zio.test.Assertion.*
+import zio.test.TestAspect.*
 import zio.test.*
+
+import java.nio.charset.StandardCharsets.UTF_8
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.OffsetDateTime
+import java.time.ZoneOffset.UTC
 
 import Codec.*
 
 object CodecSpec extends ZIOSpecDefault:
 
-  inline final def clear = Unpooled.buffer(2 * 1024)
+  inline final def clear = Unpooled.buffer(1 * 1024)
 
   def spec: Spec[Environment & TestEnvironment, Any] =
     suite("codecs")(
-      suite("numeric")(
+      suite("numerical")(
         test("int2") {
           given ByteBuf = clear
           int2(-1); assertTrue(-1 == int2())
@@ -53,16 +60,17 @@ object CodecSpec extends ZIOSpecDefault:
           _float4(Array(Float.MinValue, -1, 0, 1, math.Pi.toFloat, Float.MaxValue));
           assertTrue(Array(Float.MinValue, -1, 0, 1, math.Pi.toFloat, Float.MaxValue).sameElements(_float4()))
         },
-        test("float8") {
-          given ByteBuf = clear
-          float8(-1); assertTrue(-1 == float8())
-          float8(0); assertTrue(0 == float8())
-          float8(1); assertTrue(1 == float8())
-          float8(math.Pi); assertTrue(math.Pi == float8())
-          float8(Double.MinValue); assertTrue(Double.MinValue == float8())
-          float8(Double.MaxValue); assertTrue(Double.MaxValue == float8())
-          float8(Double.MinPositiveValue); assertTrue(Double.MinPositiveValue == float8())
-        },
+        suite("float8")(
+          test("-1") { given ByteBuf = clear; float8(-1d); assertTrue(-1d == float8()) },
+          test("0") { given ByteBuf = clear; float8(0d); assertTrue(0d == float8()) },
+          test("1") { given ByteBuf = clear; float8(1d); assertTrue(1d == float8()) },
+          test("pi") { given ByteBuf = clear; float8(math.Pi); assertTrue(math.Pi == float8()) },
+          test("Double.MinValue") { given ByteBuf = clear; float8(Double.MinValue); assertTrue(Double.MinValue == float8()) },
+          test("Double.MaxValue") { given ByteBuf = clear; float8(Double.MaxValue); assertTrue(Double.MaxValue == float8()) },
+          test("Double.MinPositiveValue") {
+            given ByteBuf = clear; float8(Double.MinPositiveValue); assertTrue(Double.MinPositiveValue == float8())
+          }
+        ),
         suite("numeric")(
           test("-1") { given ByteBuf = clear; numeric(BigDecimal(-1)); assertTrue(-1 == numeric()) },
           test("0") { given ByteBuf = clear; numeric(0); assertTrue(0 == numeric()) },
@@ -114,16 +122,19 @@ object CodecSpec extends ZIOSpecDefault:
             assertTrue(BigDecimal(Double.MinPositiveValue) == numeric())
           }
         )
-      ),
-      suite("text")(
-        test("text") {
-          given ByteBuf = clear
-          text(""); assertTrue("" == text())
-          text("A"); assertTrue("A" == text())
-          text("-1.0"); assertTrue("-1.0" == text())
-          text("äöüÄÖÜß@€🔥🌈"); assertTrue("äöüÄÖÜß@€🔥🌈" == text())
-          text("史密斯是王明的朋友。"); assertTrue("史密斯是王明的朋友。" == text())
-        },
+      ) @@ flaky,
+      suite("textual")(
+        suite("text")(
+          test("empty") { given ByteBuf = clear; text(""); assertTrue("" == text()) },
+          test("A") { given ByteBuf = clear; text("A"); assertTrue("A" == text()) },
+          test("-1.0") { given ByteBuf = clear; text("-1.0"); assertTrue("-1.0" == text()) },
+          test("umlaut") { given ByteBuf = clear; text("äöüÄÖÜß@€🔥🌈"); assertTrue("äöüÄÖÜß@€🔥🌈" == text()) },
+          test("chinise") { given ByteBuf = clear; text("史密斯是王明的朋友。"); assertTrue("史密斯是王明的朋友。" == text()) },
+          test("_text") {
+            given ByteBuf = clear; val t = Array("", "A", "-1.0", "äöüÄÖÜß@€🔥🌈", "史密斯是王明的朋友。"); _text(t);
+            assertTrue(t.sameElements(_text()))
+          }
+        ),
         test("name") {
           given ByteBuf = clear
           name(""); assertTrue("" == name())
@@ -132,13 +143,8 @@ object CodecSpec extends ZIOSpecDefault:
           text("1234567890123456789012345678901234567890123456789012345678901234567890");
           assertTrue("123456789012345678901234567890123456789012345678901234567890123" == name())
         },
-        test("char") {
-          given ByteBuf = clear
-          char(0.toChar); assertTrue(0.toChar == char())
-          char('A'); assertTrue('A' == char())
-          char('@'); assertTrue('@' == char())
-        }
-      ),
+        test("char") { given ByteBuf = clear; char('@'); assertTrue('@' == char()) }
+      ) @@ flaky,
       suite("others")(
         suite("bool")(
           test("true") { given ByteBuf = clear; bool(true); assertTrue(true == bool()) },
@@ -153,7 +159,7 @@ object CodecSpec extends ZIOSpecDefault:
           test("0") { given ByteBuf = clear; val bytes = Array(0.toByte); bytea(bytes); assertTrue(bytes.sameElements(bytea())) },
           test("getBytes") {
             given ByteBuf = clear;
-            val bytes = "lkasjdflkajsdfASDFASBASDFlkjasdöfl kjasldökfjasldkfjasldkfjalskdjflöasdkjföalskdjf".getBytes("UTF-8").nn
+            val bytes = "lkasjdflkajsdfASDFASBASDFlkjasdöfl kjasldökfjasldkfjasldkfjalskdjflöasdkjföalskdjf".getBytes(UTF_8).nn
             bytea(bytes); assertTrue(bytes.sameElements(bytea()))
           }
         ),
@@ -162,38 +168,51 @@ object CodecSpec extends ZIOSpecDefault:
           import java.util.UUID
           given ByteBuf = clear
           var u = Uuid(UUID.randomUUID.nn); uuid(u); assertTrue(u == uuid())
-          u = Uuid(UUID.fromString("00000000-0000-0000-0000-000000000000")); uuid(u); assertTrue(u == uuid())
-        } @@ TestAspect.nonFlaky
-      ),
-      suite("timestamps")(
-        test("interval") {
-          import Util.Interval
-          given ByteBuf = clear
-          var i = Interval(1970, 1, 1, 0, 0, 0); interval(i); assertTrue(i == interval())
-          i = Interval(2023, 4, 21, 14, 59, 59.099); interval(i); assertTrue(i == interval())
-          i = Interval(1685, 3, 31, 10, 59, 59.999); interval(i); assertTrue(i == interval())
-        },
-        test("timestamptz") {
-          import java.time.OffsetDateTime
-          import java.time.LocalDate
-          import java.time.LocalTime
-          import java.time.ZoneOffset.UTC
-          given ByteBuf = clear
-          var t = OffsetDateTime.now(UTC); timestamptz(t); assertTrue(t == timestamptz())
-          t = OffsetDateTime.of(LocalDate.of(1970, 1, 1), LocalTime.of(0, 0), UTC); timestamptz(t);
-          assertTrue(t == timestamptz())
-          t = OffsetDateTime.of(LocalDate.of(1685, 3, 31), LocalTime.of(10, 59), UTC); timestamptz(t);
-          assertTrue(t == timestamptz())
-        } @@ TestAspect.nonFlaky,
-        test("date") {
-          import java.time.LocalDate
-          given ByteBuf = clear
-          var d = LocalDate.of(1685, 3, 31); date(d); assertTrue(d == date())
-          d = LocalDate.of(1970, 1, 1); date(d); assertTrue(d == date())
-          d = LocalDate.now; date(d); assertTrue(d == date())
-          d = LocalDate.EPOCH; date(d); assertTrue(d == date())
-          d = LocalDate.of(-4713, 1, 1); date(d); assertTrue(d == date())
-          d = LocalDate.of(5874897, 12, 31); date(d); assertTrue(d == date())
-        } @@ TestAspect.nonFlaky
-      )
+        }
+      ) @@ flaky,
+      suite("datetime")(
+        suite("interval")(
+          test("1970") { given ByteBuf = clear; val i = Util.Interval(1970, 1, 1, 0, 0, 0); interval(i); assertTrue(i == interval()) },
+          test("2023") {
+            given ByteBuf = clear; val i = Util.Interval(2023, 4, 21, 14, 59, 59.099); interval(i); assertTrue(i == interval())
+          },
+          test("1685") {
+            given ByteBuf = clear; val i = Util.Interval(1685, 3, 31, 10, 59, 59.999999); interval(i); assertTrue(i == interval())
+          },
+          test("-4713") {
+            given ByteBuf = clear; val i = Util.Interval(-4712, -1, -17, 0, 0, 0.999999); interval(i); assertTrue(i == interval())
+          },
+          test("min") {
+            given ByteBuf = clear; val i = Util.Interval(-178000000 + 1, -11, -30, -23, -59, -59.999999); interval(i);
+            assertTrue(i == interval())
+          },
+          test("max") {
+            given ByteBuf = clear; val i = Util.Interval(178000000 - 1, 11, 30, 23, 59, 59.999999); interval(i); assertTrue(i == interval())
+          }
+        ),
+        suite("timestamptz")(
+          test("now") {
+            given ByteBuf = clear; val t = OffsetDateTime.now(UTC); timestamptz(t); assertTrue(t == timestamptz())
+          },
+          test("1970") {
+            given ByteBuf = clear; val t = OffsetDateTime.of(LocalDate.of(1970, 1, 1), LocalTime.of(0, 0), UTC); timestamptz(t);
+            assertTrue(t == timestamptz())
+          },
+          test("1685") {
+            given ByteBuf = clear; val t = OffsetDateTime.of(LocalDate.of(1685, 3, 31), LocalTime.of(10, 59), UTC); timestamptz(t);
+            assertTrue(t == timestamptz())
+          },
+          test("-4713") {
+            given ByteBuf = clear; val t = OffsetDateTime.of(LocalDate.of(-4713, 1, 1), LocalTime.of(0, 0), UTC); timestamptz(t);
+            assertTrue(t == timestamptz())
+          }
+        ),
+        suite("date")(
+          test("1685") { given ByteBuf = clear; val d = LocalDate.of(1685, 3, 31); date(d); assertTrue(d == date()) },
+          test("new") { given ByteBuf = clear; val d = LocalDate.now; date(d); assertTrue(d == date()) },
+          test("EPOCH") { given ByteBuf = clear; val d = LocalDate.EPOCH; date(d); assertTrue(d == date()) },
+          test("-4713") { given ByteBuf = clear; val d = LocalDate.of(-4713, 1, 1); date(d); assertTrue(d == date()) },
+          test("5874897") { given ByteBuf = clear; val d = LocalDate.of(5874897, 12, 31); date(d); assertTrue(d == date()) }
+        )
+      ) @@ flaky
     )

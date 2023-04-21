@@ -1,12 +1,10 @@
-package object example1:
+package object facts:
 
   import zio.*
   import java.nio.charset.StandardCharsets.UTF_8
 
-  inline given nn_conversion[A]: Conversion[A | Null, A] = _.nn
-
   final def readResourceFile(name: String): String =
-    String(getClass.getClassLoader.getResourceAsStream(name).readAllBytes, UTF_8)
+    String(getClass.nn.getClassLoader.nn.getResourceAsStream(name).nn.readAllBytes, UTF_8)
 
   extension [R, E, A](f: ZIO[R, E, A])
     def measured(prefix: String): ZIO[R, E, A] =
@@ -16,4 +14,4 @@ package object example1:
         _ <- (if prefix.length > 0 then ZIO.debug(s"$prefix : ${sec}s") else ZIO.debug(s"${sec}s"))
       yield r
 
-    def measured: ZIO[R, E, A] = f.measured("".intern)
+    def measured: ZIO[R, E, A] = f.measured("".intern.nn)

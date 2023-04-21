@@ -1,10 +1,10 @@
-package example1
+package facts
 
 import io.netty.buffer.ByteBuf
 import zio.*
+import zio.pgcopy.Util.Uuid
 import zio.pgcopy.*
 import zio.pgcopy.given
-import zio.pgcopy.Util.Uuid
 
 object Event:
   enum Category:
