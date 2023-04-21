@@ -147,4 +147,4 @@ object Util:
       else
         unscaled = unscaled.multiply(BigInteger.TEN.pow(-scale))
         eucl
-        NumericComponents(0, 0, math.max(0, scale), digits)
+        NumericComponents(0, sign, math.max(0, scale), digits)
