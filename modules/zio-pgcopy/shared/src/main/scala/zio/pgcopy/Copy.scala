@@ -12,8 +12,6 @@ trait Copy:
 
   def out[E: MakeError, A: Decoder](select: String, limit: Long = Long.MaxValue): ZIO[Scope, E, ZStream[Any, E, Chunk[A]]]
 
-  protected def describe[E: MakeError, A](select: String): IO[E, Unit]
-
 object Copy:
 
   type MakeError[E] = Any => E
@@ -68,7 +66,7 @@ object Copy:
         yield outstream
       copy
 
-    def describe[E: MakeError, A](select: String) =
+    private def describe[E: MakeError, A](select: String) =
       inline def prepare(using makeError: MakeError[E]) =
         ZIO
           .scoped(pool.get.flatMap(_.describe(select)))
@@ -104,10 +102,10 @@ object Copy:
     val so_sndbuf = Config.int("so_sndbuf").map(Util.ceilPower2(_)).withDefault(32 * 1024)
     val so_rcvbuf = Config.int("so_rcvbuf").map(Util.ceilPower2(_)).withDefault(32 * 1024)
     val bytebufsize = Config.int("bytebufsize").map(Util.ceilPower2(_)).withDefault(128 * 1024)
-    val checksize = Config.boolean("checksize").withDefault(false)
+    val checkbufsize = Config.boolean("checkbufsize").withDefault(false)
     val incomingsize = Config.int("incomingsize").map(Util.ceilPower2(_)).withDefault(8 * 1024)
     val outgoingsize = Config.int("outgoingsize").map(Util.ceilPower2(_)).withDefault(4 * 1024)
-    val io = (so_rcvbuf ++ so_sndbuf ++ bytebufsize ++ checksize ++ incomingsize ++ outgoingsize)
+    val io = (so_rcvbuf ++ so_sndbuf ++ bytebufsize ++ checkbufsize ++ incomingsize ++ outgoingsize)
       .map((a, b, c, d, e, f) => IoConfig(a, b, c, d, e, f))
       .nested(("io"))
 
@@ -123,5 +121,5 @@ private case class ServerConfig(
 )
 private case class PoolConfig(min: Int, max: Int, timeout: Duration)
 private case class RetryConfig(base: Duration, factor: Double, retries: Int)
-private case class IoConfig(so_rcvbuf: Int, so_sndbuf: Int, bytebufsize: Int, checksize: Boolean, incomingsize: Int, outgoingsize: Int)
+private case class IoConfig(so_rcvbuf: Int, so_sndbuf: Int, bytebufsize: Int, checkbufsize: Boolean, incomingsize: Int, outgoingsize: Int)
 private case class Configuration(server: ServerConfig, pool: PoolConfig, retry: RetryConfig, io: IoConfig)

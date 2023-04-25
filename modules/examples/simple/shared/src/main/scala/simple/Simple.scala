@@ -5,13 +5,13 @@ import zio.*
 import zio.pgcopy.*
 import zio.pgcopy.given
 
-import scala.runtime.Statics
-
 case class Simple(i: Int)
 
-inline given Codec[Simple] = BiCodec[Simple](Decoder(), Encoder(_))
+inline given simple: BiCodec[Simple] = BiCodec[Simple](Decoder(), Encoder(_))
 
 object Simple:
+  given Simple = Simple(0)
+
   def randomSimple: UIO[Simple] =
     import Random.*
     for i <- nextInt yield Simple(i)

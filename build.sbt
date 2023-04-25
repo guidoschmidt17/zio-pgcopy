@@ -18,7 +18,7 @@ name := "zio-pgcopy"
 
 val ZioVersion = "2.0.13"
 val ZioConfigVersion = "4.0.0-RC14"
-val NettyVersion = "4.1.91.Final"
+val NettyVersion = "4.1.92.Final"
 val ScramVersion = "2.1"
 
 lazy val `zio-pgcopy` =

@@ -8,12 +8,13 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
+import scala.compiletime.constValueTuple
 import scala.deriving.Mirror.ProductOf
 import scala.reflect.ClassTag
+import scala.reflect.classTag
 
 trait Decoder[A]:
   def apply()(using ByteBuf): A
-
 trait Encoder[A]:
   def apply(a: A)(using ByteBuf): Unit
 
@@ -21,7 +22,15 @@ trait Codec[A] extends Encoder[A], Decoder[A]
 
 object Codec:
 
-  final class BiCodec[A](decode: ByteBuf ?=> A, encode: A => ByteBuf ?=> Unit) extends Codec[A]:
+  import Util.*
+  import Util.given
+
+  inline final def in[A: ClassTag](using m: ProductOf[A]): String =
+    s"$tablename(${compiletime.constValueTuple[m.MirroredElemLabels].toList.mkString(",")})"
+  inline final def out[A: ClassTag](using m: ProductOf[A]): String =
+    s"select ${compiletime.constValueTuple[m.MirroredElemLabels].toList.mkString(",")} from $tablename"
+
+  final class BiCodec[A: ClassTag](decode: ByteBuf ?=> A, encode: A => ByteBuf ?=> Unit) extends Codec[A]:
     inline final def apply()(using ByteBuf): A = decode
     inline final def apply(a: A)(using ByteBuf): Unit = encode(a)
 
@@ -50,8 +59,6 @@ object Codec:
     final lazy val typeoid: Int = Types.get(this).getOrElse(text.typeoid)
   protected sealed trait BaseCodec[A] extends BaseEncoder[A], BaseDecoder[A]
   protected sealed trait BaseArrayCodec[A] extends BaseEncoder[Array[A]], BaseDecoder[Array[A]]
-
-  import Util.*
 
   private final class ArrayBuilder[A: ClassTag]:
     def apply(decoder: BaseDecoder[A])(using buf: ByteBuf): Array[A] =
@@ -397,43 +404,12 @@ object Codec:
     _jsonb -> 3807
   )
 
-  private def fromOid(oid: Int): BaseEncoder[?] =
+  private final def fromOid(oid: Int): BaseEncoder[?] =
     Types.find(_._2 == oid).map(_._1).getOrElse(text)
 
-  private[pgcopy] def nameForOid(oid: Int): String = fromOid(oid).getClass.getSimpleName match
+  private[pgcopy] final def nameForOid(oid: Int): String = fromOid(oid).getClass.getSimpleName match
     case n if n.endsWith("$") => n.nn.dropRight(1)
     case n                    => n
 
-  extension (buf: ByteBuf)
-    inline private[pgcopy] def ignoreInt: Unit =
-      buf.readerIndex(buf.readerIndex + 4)
-    inline private[pgcopy] def ignoreArrayHeader: Unit =
-      buf.readerIndex(buf.readerIndex + 16)
-    inline private[pgcopy] def ignoreCopyOutHeader: Unit =
-      if buf.readableBytes >= 23 then buf.readerIndex(buf.readerIndex + 19)
-    inline private[pgcopy] def readUtf8(len: Int): String =
-      String.valueOf(buf.readCharSequence(len, UTF_8))
-    inline private[pgcopy] def readUtf8z: String =
-      var i = buf.readerIndex
-      while buf.getByte(i) != 0 do i += 1
-      val res = String.valueOf(buf.readCharSequence(i - buf.readerIndex, UTF_8))
-      buf.readerIndex(buf.readerIndex + 1)
-      res
-    inline private[pgcopy] def readByteArray(len: Int): Array[Byte] =
-      val arr = Array.ofDim[Byte](len)
-      buf.readBytes(arr, 0, len)
-      arr
-    inline private[pgcopy] def readRemaining: Array[Byte] =
-      buf.readByteArray(buf.readableBytes)
-    inline private[pgcopy] def writeUtf8z(s: String): ByteBuf =
-      buf.writeBytes(s.getBytes(UTF_8))
-      buf.writeByte(0)
-    inline private[pgcopy] def writeUtf8s(s: String): ByteBuf =
-      buf.writeBytes(s.getBytes(UTF_8))
-    inline private[pgcopy] def writeUtf8(s: String): ByteBuf =
-      val bytes = s.getBytes(UTF_8)
-      val len = bytes.length
-      buf.writeInt(len)
-      buf.writeBytes(bytes, 0, len)
-
-inline private given [A]: Conversion[A | Null, A] = _.nn
+  inline private final def tablename[A: ClassTag]: String =
+    classTag.runtimeClass.getSimpleName.nn.replace("$", "").nn.toLowerCase

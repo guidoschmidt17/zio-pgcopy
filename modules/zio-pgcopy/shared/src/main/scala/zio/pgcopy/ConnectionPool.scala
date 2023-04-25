@@ -32,6 +32,8 @@ import ConnectionPool.*
 import Connection.Status
 import Status.*
 import Codec.*
+import Util.*
+import Util.given
 
 private case class Connection[E: MakeError](
     private val future: ChannelFuture,

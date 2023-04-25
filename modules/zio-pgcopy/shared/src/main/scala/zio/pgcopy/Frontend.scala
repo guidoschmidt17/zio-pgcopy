@@ -11,6 +11,8 @@ import java.security.MessageDigest
 import scala.annotation.switch
 
 import FrontendMessage.*
+import Util.*
+import Util.given
 
 private sealed trait FrontendMessage:
   val payload: ByteBuf
@@ -134,16 +136,16 @@ private object FrontendMessage:
     override def toString = s"CopyOut(${rows.size})"
     val payload =
       given ByteBuf = buf
-      val b = if checksize then buf.capacity else 0
+      val b = if checkbufsize then buf.capacity else 0
       buf.writeBytes(Header, 0, Header.length)
       rows.foreach(encoder(_))
       buf.writeShort(-1)
-      if checksize then if buf.capacity > b then println(s"warning: enlarge 'io.bytebufsize', $b -> ${buf.capacity}")
+      if checkbufsize then if buf.capacity > b then println(s"warning: enlarge 'io.bytebufsize', $b -> ${buf.capacity}")
       lengthPrefixed(buf)
 
   private final val Header: Array[Byte] = "PGCOPY".getBytes.nn ++ Array(0x0a, 0xff, 0x0d, 0x0a, 0, 0, 0, 0, 0, 0, 0, 0, 0).map(_.toByte)
 
   private[pgcopy] final var ioConfig: IoConfig | Null = null
 
-  private final lazy val bytebufsize = ioConfig.nn.bytebufsize
-  private final lazy val checksize = ioConfig.nn.checksize
+  private final lazy val bytebufsize = ioConfig.bytebufsize
+  private final lazy val checkbufsize = ioConfig.checkbufsize

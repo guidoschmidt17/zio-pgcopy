@@ -14,6 +14,8 @@ import java.time.OffsetDateTime
 import java.time.ZoneOffset.UTC
 
 import Codec.*
+import Util.*
+import Util.given
 
 object CodecSpec extends ZIOSpecDefault:
 

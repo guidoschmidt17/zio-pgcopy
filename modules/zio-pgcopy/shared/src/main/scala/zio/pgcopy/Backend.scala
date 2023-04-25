@@ -11,6 +11,8 @@ private sealed trait BackendMessage
 private object BackendMessage:
 
   import Codec.*
+  import Util.*
+  import Util.given
 
   def apply()(using buf: ByteBuf): BackendMessage =
     val tag = buf.readByte.toChar

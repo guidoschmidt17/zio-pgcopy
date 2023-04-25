@@ -5,6 +5,7 @@ import io.netty.buffer.ByteBuf
 import zio.*
 
 import java.math.BigInteger
+import java.nio.charset.StandardCharsets.UTF_8
 import java.util.UUID
 import scala.collection.mutable.ListBuffer
 
@@ -38,6 +39,40 @@ object Util:
     x |= x >> 8
     x |= x >> 16
     x + 1
+
+  extension (buf: ByteBuf)
+    inline def ignoreInt: Unit =
+      buf.readerIndex(buf.readerIndex + 4)
+    inline def ignoreArrayHeader: Unit =
+      buf.readerIndex(buf.readerIndex + 16)
+    inline def ignoreCopyOutHeader: Unit =
+      if buf.readableBytes >= 23 then buf.readerIndex(buf.readerIndex + 19)
+    inline def readUtf8(len: Int): String =
+      String.valueOf(buf.readCharSequence(len, UTF_8))
+    inline def readUtf8z: String =
+      var i = buf.readerIndex
+      while buf.getByte(i) != 0 do i += 1
+      val res = String.valueOf(buf.readCharSequence(i - buf.readerIndex, UTF_8))
+      buf.readerIndex(buf.readerIndex + 1)
+      res
+    inline def readByteArray(len: Int): Array[Byte] =
+      val arr = Array.ofDim[Byte](len)
+      buf.readBytes(arr, 0, len)
+      arr
+    inline def readRemaining: Array[Byte] =
+      buf.readByteArray(buf.readableBytes)
+    inline def writeUtf8z(s: String): ByteBuf =
+      buf.writeBytes(s.getBytes(UTF_8))
+      buf.writeByte(0)
+    inline def writeUtf8s(s: String): ByteBuf =
+      buf.writeBytes(s.getBytes(UTF_8))
+    inline def writeUtf8(s: String): ByteBuf =
+      val bytes = s.getBytes(UTF_8)
+      val len = bytes.length
+      buf.writeInt(len)
+      buf.writeBytes(bytes, 0, len)
+
+  inline private[pgcopy] given [A]: Conversion[A | Null, A] = _.nn
 
   private[pgcopy] case class NumericComponents(weight: Int, sign: Int, scale: Int, digits: ListBuffer[Int]):
     val len = digits.length
