@@ -31,8 +31,8 @@ object Narrow:
       tags: Array[String]
   )
 
-given Codec[Fact] = BiCodec[Fact](Decoder(), Encoder(_))
-given narrow: Codec[Narrow.Fact] = BiCodec[Narrow.Fact](Decoder(), Encoder(_))
+given Codec[Fact] = BiCodec(Decoder(), Encoder(_))
+given narrow: Codec[Narrow.Fact] = BiCodec(Decoder(), Encoder(_))
 
 object Fact:
 

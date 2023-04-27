@@ -6,7 +6,7 @@ import zio.pgcopy.given
 
 case class Simple(i: Int)
 
-given Codec[Simple] = BiCodec[Simple](Decoder(), Encoder(_))
+given Codec[Simple] = BiCodec(Decoder(), Encoder(_))
 
 object Simple:
   val in = inExpression[Simple]
