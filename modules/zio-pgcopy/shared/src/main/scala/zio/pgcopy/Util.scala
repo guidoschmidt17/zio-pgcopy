@@ -7,6 +7,7 @@ import zio.*
 import java.math.BigInteger
 import java.nio.charset.StandardCharsets.UTF_8
 import java.util.UUID
+import scala.annotation.targetName
 import scala.collection.mutable.ListBuffer
 
 object Util:
@@ -27,9 +28,11 @@ object Util:
 
     inline def nextUuid: UIO[Uuid] = Random.nextUUID.flatMap(uuid => ZIO.succeed(Uuid(uuid)))
 
-    inline given Conversion[Uuid, UUID] = _.uuid
+    given Conversion[Uuid, UUID] with
+      inline def apply(a: Uuid): UUID = a.uuid
 
-    inline given Conversion[UUID, Uuid] = Uuid(_)
+    @targetName("given_Conversion_from_UUID_Uuid") given Conversion[UUID, Uuid] with
+      inline def apply(a: UUID) = Uuid(a)
 
   private[pgcopy] inline final def ceilPower2(i: Int): Int =
     var x = i - 1
@@ -72,7 +75,8 @@ object Util:
       buf.writeInt(len)
       buf.writeBytes(bytes, 0, len)
 
-  inline private[pgcopy] given [A]: Conversion[A | Null, A] = _.nn
+  private[pgcopy] given [A]: Conversion[A | Null, A] with
+    inline def apply(a: A | Null): A = a.nn
 
   private[pgcopy] case class NumericComponents(weight: Int, sign: Int, scale: Int, digits: ListBuffer[Int]):
     val len = digits.length

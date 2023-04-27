@@ -25,12 +25,12 @@ object Codec:
   import Util.*
   import Util.given
 
-  inline final def in[A: ClassTag](using m: ProductOf[A]): String =
+  inline final def inExpression[A: ClassTag](using m: ProductOf[A]): String =
     s"$tablename(${compiletime.constValueTuple[m.MirroredElemLabels].toList.mkString(",")})"
-  inline final def out[A: ClassTag](using m: ProductOf[A]): String =
+  inline final def outExpression[A: ClassTag](using m: ProductOf[A]): String =
     s"select ${compiletime.constValueTuple[m.MirroredElemLabels].toList.mkString(",")} from $tablename"
 
-  final class BiCodec[A: ClassTag](decode: ByteBuf ?=> A, encode: A => ByteBuf ?=> Unit) extends Codec[A]:
+  final class BiCodec[A](decode: ByteBuf ?=> A, encode: A => ByteBuf ?=> Unit) extends Codec[A]:
     inline final def apply()(using ByteBuf): A = decode
     inline final def apply(a: A)(using ByteBuf): Unit = encode(a)
 

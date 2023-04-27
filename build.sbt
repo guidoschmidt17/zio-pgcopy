@@ -3,9 +3,9 @@ import CustomUtil._
 ThisBuild / organization := "zio-pgcopy"
 ThisBuild / licenses := Seq(License.Apache2)
 ThisBuild / developers := List(Developer("guidoschmidt17", "Guido Schmidt", "", url("https://github.com/guidoschmidt17/zio-pgcopy")))
-ThisBuild / scalaVersion := "3.2.2"
+ThisBuild / scalaVersion := "3.3.0-RC4"
 
-ThisBuild / version := "0.1.0"
+ThisBuild / version := "0.1.0-RC1"
 
 ThisBuild / showSuccess := false
 

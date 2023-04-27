@@ -17,44 +17,46 @@ object Main extends ZIOAppDefault:
 
   given MakeError[String] = _.toString
 
-  val sessions = 19
+  val sessions = 7
   val repeats = 29
-  val warmups = 9
+  val warmups = 1
+  val p = 2
   val n = 400000
-  val timeout = 120.seconds
+  val timeout = 60.seconds
   val begin = AtomicLong(0)
   val elapsed = AtomicLong(0L)
   def lap = elapsed.set(nanoTime - begin.get)
-  val in = Codec.in[Simple]
-  val out = Codec.out[Simple]
 
   private def make(copy: Copy) = new Main:
 
     def run =
       import Simple.*
-      val warmup = for
-        f <- randomSimples(n)
-        _ <- copy.in(in, ZStream.fromChunk(f)).measured(s"copy.in")
-        _ <- ZIO.scoped(copy.out[String, Simple](out, n).flatMap(_.runDrain))
+      for
+        data <- randomSimples(n)
+        warmup = for
+          _ <- copy.in(in, ZStream.fromChunk(data))
+          _ <- ZIO.scoped(copy.out[String, Simple](out, n).flatMap(_.runDrain))
+        yield ()
+        _ <- warmup.repeatN(warmups)
+        _ = begin.set(nanoTime)
         i <- Random.nextIntBetween(1, 500)
         _ <- ZIO.sleep(i.milliseconds)
+        loop = for
+          _ <- copy.in(in, ZStream.fromChunk(data)).measured(s"copy.in")
+          _ <- ZIO.scoped(copy.out[String, Simple](out, n).flatMap(_.runDrain).measured(s"copy.out"))
+        yield lap
+        _ <- loop.repeatN(repeats)
       yield ()
-      warmup.repeatN(warmups)
-      begin.set(nanoTime)
-      val loop = for
-        f <- randomSimples(n)
-        _ <- copy.in(in, ZStream.fromChunk(f)).measured(s"copy.in")
-        _ <- ZIO.scoped(copy.out[String, Simple](out, n).flatMap(_.runDrain).measured(s"copy.out"))
-      yield lap
-      loop.repeatN(repeats)
+
+      // results: in: 10.3 / out: 4.1 / in/out: 6.3 (mio ops/sec)
 
   val program = ZIO
     .service[Main]
     .provideSome[Scope](Main.layer, Copy.layer)
-    .flatMap(_.run.forkDaemon.repeatN(sessions))
+    .flatMap(ZIO.debug(s"warmup ...") *> _.run.forkDaemon.repeatN(sessions))
     .catchAllCause(ZIO.logErrorCause(_))
     *> ZIO.sleep(timeout) *> ZIO.debug(
-      s"operations: ${2 * n * (repeats + 1) * (sessions + 1)}, elapsed : ${elapsed.get / 1000000000d} sec, ${((2 * n * (repeats + 1) * (sessions + 1)) / (elapsed.get / 1000000000d)).toLong} ops/sec"
+      s"operations: ${p * n * (repeats + 1) * (sessions + 1)}, elapsed : ${elapsed.get / 1000000000d} sec, ${((p * n * (repeats + 1) * (sessions + 1)) / (elapsed.get / 1000000000d)).toLong} ops/sec"
     )
 
   val run = program

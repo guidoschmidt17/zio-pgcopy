@@ -58,7 +58,6 @@ object Copy:
             .flattenTake
           _ <- loopResult(out, offset, limit)
             .catchAllCause(c => ZIO.logErrorCause(c) *> ZIO.fail(c))
-            .catchAllDefect(ZIO.debug(s"never come here") *> ZIO.fail(_))
             .retry(pool.RetrySchedule(s"copy.out"))
             .catchAll(e => ZIO.fail(makeError(e)))
             .ensuring(out.offer(Take.end))

@@ -12,6 +12,9 @@ inline given simple: BiCodec[Simple] = BiCodec[Simple](Decoder(), Encoder(_))
 object Simple:
   given Simple = Simple(0)
 
+  val in = inExpression[Simple]
+  val out = outExpression[Simple]
+
   def randomSimple: UIO[Simple] =
     import Random.*
     for i <- nextInt yield Simple(i)
