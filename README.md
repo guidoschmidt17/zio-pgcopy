@@ -6,7 +6,7 @@ A library to perform very fast bulk inserts and bulk selects to a PostgreSQL dat
 
 `zio-pgcopy` is highly inspired by the excellent libraries `skunk` and `clj-pgcopy` (hope it's ok to borrow the name). Both use the PostgreSQL wire protocol 3. The former supports text encoding only and does not implement the copy in/out commands. But it is extremly versatile. The latter only implements the copy-in command based on the binary codec (and is written in Clojure). Hence, we decided to build our own library (and base it on Scala 3, ZIO 2, Netty and binary codecs).
 
-The binary encoding/decoding for most datatypes is very straightforward and for some a little quirky (eg. numeric). But it is almost always superior to the text codecs in terms of network payload and cpu processing. For more details see the section below.
+The binary encoding/decoding for most datatypes is very straightforward and for some a little quirky (eg. numeric). But it is almost always superior to the text codec in terms of network payload and cpu processing. For more details see the section below.
 
 With `zio-pgcopy` we managed to increase the throughput from 10000-100000 rows/sec to 1-5 million rows/sec depending on table width and column complexity.    
 &nbsp;
@@ -53,7 +53,50 @@ def run =
 
 // results: in: 10.3 / out: 4.1 / in/out: 6.3 (mio ops/sec)
 ```
+&nbsp;
+## Codecs for PostgreSQL data types
+`zio-pgcopy` supports the most commonly used data types. If a data type is not mapped the `text` codec is used as a fallback. You can provide a `text` to `your-type` conversion to support `your-type`. This is used for Scala 3 enums, for instance. These codecs can be used to compose a decoder or an encoder easily if the automatic codec generation is not possible because the necessary preconditions are not met. 
 
+```scala
+bool -> 16,
+bytea -> 17,
+char -> 18,
+name -> 19,
+int8 -> 20,
+int2 -> 21,
+int4 -> 23,
+text -> 25,
+json -> 114,
+float4 -> 700,
+float8 -> 701,
+varchar -> 1043,
+date -> 1082,
+timestamp -> 1114,
+timestamptz -> 1184,
+interval -> 1186,
+numeric -> 1700,
+uuid -> 2950,
+jsonb -> 3802,
+_json -> 199,
+_bool -> 1000,
+_bytea -> 1001,
+_char -> 1002,
+_name -> 1003,
+_int2 -> 1005,
+_int4 -> 1007,
+_text -> 1009,
+_varchar -> 1015,
+_int8 -> 1016,
+_float4 -> 1021,
+_float8 -> 1022,
+_timestamp -> 1115,
+_date -> 1182,
+_timestamptz -> 1185,
+_interval -> 1187,
+_numeric -> 1231,
+_uuid -> 2951,
+_jsonb -> 3807
+```
 
 
 
