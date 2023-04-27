@@ -55,7 +55,7 @@ def run =
 ```
 &nbsp;
 ## Codecs for PostgreSQL data types
-`zio-pgcopy` supports the most commonly used data types. If a data type is not mapped the `text` codec is used as a fallback. You can provide a `text` to `your-type` conversion to support `your-type`. This is used for Scala 3 enums, for instance. These codecs can be used to compose a decoder or an encoder easily if the automatic codec generation is not possible because the necessary preconditions are not met. 
+`zio-pgcopy` supports the most commonly used PostgreSQL data types. If a data type is not mapped the `text` codec is used as a fallback. You can provide a `text` to and from `your-type` conversion to support `your-type`. This can be used for Scala 3 enums, for instance. The provided codecs are used to compose a decoder/encoder automatically of manually if the automatic codec generation is not possible because the necessary preconditions are not met. 
 
 ```scala
 bool -> 16,
