@@ -1,17 +1,14 @@
 package simple
 
-import io.netty.buffer.ByteBuf
 import zio.*
 import zio.pgcopy.*
 import zio.pgcopy.given
 
 case class Simple(i: Int)
 
-inline given simple: BiCodec[Simple] = BiCodec[Simple](Decoder(), Encoder(_))
+given Codec[Simple] = BiCodec[Simple](Decoder(), Encoder(_))
 
 object Simple:
-  given Simple = Simple(0)
-
   val in = inExpression[Simple]
   val out = outExpression[Simple]
 

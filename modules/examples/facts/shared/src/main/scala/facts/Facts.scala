@@ -1,10 +1,10 @@
 package facts
 
-import io.netty.buffer.ByteBuf
 import zio.*
-import zio.pgcopy.Util.Uuid
 import zio.pgcopy.*
 import zio.pgcopy.given
+
+import Util.Uuid
 
 object Event:
   enum Category:
@@ -21,14 +21,29 @@ case class Fact(
     tags: Array[String]
 )
 
+object Narrow:
+  case class Fact(
+      aggregatelatest: Int,
+      eventcategory: Event.Category,
+      eventid: Uuid,
+      eventdatalength: Int,
+      eventdata: Array[Byte],
+      tags: Array[String]
+  )
+
 given Codec[Fact] = BiCodec[Fact](Decoder(), Encoder(_))
+given narrow: Codec[Narrow.Fact] = BiCodec[Narrow.Fact](Decoder(), Encoder(_))
 
 object Fact:
+
+  val in = inExpression[Fact]
+  val out = outExpression[Narrow.Fact]
+
   def randomFact(aggregateid: Uuid, aggregatelatest: Int): UIO[Fact] =
     import Random.*
     for
       ec <- nextIntBounded(4)
-      eventid = aggregateid
+      eventid <- Uuid.nextUuid
       eventdatalength <- nextIntBetween(5, 100)
       eventdata <- nextBytes(eventdatalength)
       tags = Array("bla", "blabla")

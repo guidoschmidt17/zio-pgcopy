@@ -17,12 +17,12 @@ object Main extends ZIOAppDefault:
 
   given MakeError[String] = _.toString
 
-  val sessions = 7
+  val sessions = 19
   val repeats = 29
   val warmups = 1
   val p = 2
   val n = 400000
-  val timeout = 60.seconds
+  val timeout = 120.seconds
   val begin = AtomicLong(0)
   val elapsed = AtomicLong(0L)
   def lap = elapsed.set(nanoTime - begin.get)
@@ -35,7 +35,7 @@ object Main extends ZIOAppDefault:
         data <- randomSimples(n)
         warmup = for
           _ <- copy.in(in, ZStream.fromChunk(data))
-          _ <- ZIO.scoped(copy.out[String, Simple](out, n).flatMap(_.runDrain))
+          _ <- ZIO.scoped(copy.out(out, n).flatMap(_.runDrain))
         yield ()
         _ <- warmup.repeatN(warmups)
         _ = begin.set(nanoTime)
@@ -43,7 +43,7 @@ object Main extends ZIOAppDefault:
         _ <- ZIO.sleep(i.milliseconds)
         loop = for
           _ <- copy.in(in, ZStream.fromChunk(data)).measured(s"copy.in")
-          _ <- ZIO.scoped(copy.out[String, Simple](out, n).flatMap(_.runDrain).measured(s"copy.out"))
+          _ <- ZIO.scoped(copy.out(out, n).flatMap(_.runDrain).measured(s"copy.out"))
         yield lap
         _ <- loop.repeatN(repeats)
       yield ()
