@@ -6,7 +6,7 @@ A library to perform very fast bulk inserts and bulk selects to a PostgreSQL dat
 
 `zio-pgcopy` is highly inspired by the excellent libraries `skunk` and `clj-pgcopy` (hope it's ok to borrow the name). Both use the PostgreSQL wire protocol 3. The former supports text encoding only and does not implement the copy in/out commands. But it is extremly versatile. The latter only implements the copy-in command based on the binary codec (and is written in Clojure). Hence, we decided to build our own library (and base it on Scala 3, ZIO 2, Netty and binary codecs).
 
-The binary encoding/decoding for most datatypes is very straightforward and for some a little quirky (eg. numeric). But it is almost always superior to the text codec in terms of network payload and cpu processing. For more details see the section below.
+The binary encoding/decoding for most datatypes is very straightforward and for some a little quirky (eg. numeric). But it is almost always superior to the text codec in terms of network payload and cpu processing. For more details see the sections below.
 
 With `zio-pgcopy` we managed to increase the throughput from 10000-100000 rows/sec to 1-5 million rows/sec depending on table width and column complexity.    
 &nbsp;
@@ -21,6 +21,32 @@ libraryDependencies += "com.guidoschmidt17" %% "zio-pgcopy" % "0.1.0-RC1"
 ```
 &nbsp;
 ## Usage
+### API 
+`zio-pgcopy` has a very small and manageable api.
+```scala
+import zio.*
+import zio.stream.*
+
+trait Copy:
+
+  import Copy.MakeError
+
+  def in[E: MakeError, A: Encoder](insert: String, rows: ZStream[Any, E, A]): IO[E, Unit]
+
+  def out[E: MakeError, A: Decoder](select: String, limit: Long = Long.MaxValue): ZIO[Scope, E, ZStream[Any, E, Chunk[A]]]
+``` 
+As a user you need to provide a `given` instance of a `MakeError` (Any => E). Using a `Throwable` for `E` enables stack traces.
+```scala
+given MakeError[String] = _.toString
+```
+Then you need a case class for type `A` which matches the table (relation) in your PoostgreSQL database. If the case class follows some rules of convention then the `Encoder` and `Decoder` as well as the `insert` and `select` `sql` will be generated automatically. 
+These conventional rules are as follows:
+- The case class name in lowercase must match the PostgreSQL relation name. If not you need to provide the relation name with exact case.
+- The case class variable names must match the field names of the relation in PostgreSQL in exact case and the order of variables and fields must match. 
+- The case class variables must map to their corresponding PostgreSQL data type (eg. `String` -> `text`, `Long` -> `int8`, `BigDecimal` -> `numeric`). You'll find all mappings below.
+- Fields that get filled by PostgreSQL on insert (eg. BigSerial or a 'now' timestamptz) must be omitted.
+- Null values/fields are not supported.
+
 ### `Simple` example
 The `Simple` example uses a relation (table) with only one `int4` column. The required Codecs (Encoder/Decoder) are generated automatically using Scala 3 tuple operations. So are the corresponding insert and select sql expressions. 
 ```sql
@@ -54,8 +80,34 @@ def run =
 // results: in: 10.3 / out: 4.1 / in/out: 6.3 (mio ops/sec)
 ```
 &nbsp;
-## Codecs for PostgreSQL data types
-`zio-pgcopy` supports the most commonly used PostgreSQL data types. If a data type is not mapped the `text` codec is used as a fallback. You can provide a `text` to and from `your-type` conversion to support `your-type`. This can be used for Scala 3 enums, for instance. The provided codecs are used to compose a decoder/encoder automatically of manually if the automatic codec generation is not possible because the necessary preconditions are not met. 
+## Mappings
+### Mapping to and from Scala and PostgreSQL data types
+```scala 
+  Boolean <-> bool
+  Array[Byte] <-> bytea
+  Char <-> char 
+  String <-> text
+  String <-> varchar
+  String <-> name
+  String <-> json
+  String <-> jsonb
+  Short <-> int2
+  Int <-> int4
+  Long <-> int8
+  Float <-> float4
+  Double <-> float8
+  BigDecimal <-> numeric
+  LocalDate <-> date
+  OffsetDateTime <-> timestamptz
+  OffsetDateTime <-> timestamp
+  Util.Interval <-> interval
+  Util.Uuid <-> uuid
+
+  Array[<all-of-the-above>] <-> _<all-of-the-above>
+```
+&nbsp;
+### Codecs for PostgreSQL data types
+`zio-pgcopy` supports the most commonly used PostgreSQL data types (in our opinion). If a data type is not mapped the `text` codec is used as a fallback. You can provide a `text` to and from `your-type` conversion to support `your-type`. This can be used for Scala 3 enums, for instance. The provided codecs are used to compose a decoder/encoder automatically or manually if the automatic codec generation is not possible because the necessary preconditions are not met. 
 
 ```scala
 bool -> 16,

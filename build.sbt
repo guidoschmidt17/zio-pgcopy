@@ -5,7 +5,7 @@ ThisBuild / logLevel := Level.Warn
 Global / excludeLintKeys ++= Set(showSuccess, publishMavenStyle, pomIncludeRepository)
 Global / onChangedBuildSource := ReloadOnSourceChanges
 
-val ZioPgcopyVersion = "0.1.0-RC1"
+val ZioPgcopyVersion = "0.1.0-RC2"
 
 val ZioVersion = "2.0.13"
 val ZioConfigVersion = "4.0.0-RC14"
@@ -14,7 +14,7 @@ val ScramVersion = "2.1"
 
 ThisBuild / version := ZioPgcopyVersion
 
-ThisBuild / scalaVersion := "3.3.0-RC4"
+ThisBuild / scalaVersion := "3.2.2"
 
 name := "zio-pgcopy"
 
@@ -44,12 +44,13 @@ lazy val `facts` =
   crossProject(JVMPlatform)
     .crossType(CrossType.Full)
     .in(file("modules/examples/facts"))
+    .dependsOn(`zio-pgcopy`)
     .settings(commonSettings)
     .settings(
       libraryDependencies ++= Seq(
         "dev.zio" %%% "zio-config" % ZioConfigVersion,
-        "dev.zio" %%% "zio-config-yaml" % ZioConfigVersion,
-        "com.guidoschmidt17" %%% "zio-pgcopy" % "0.1.0-RC1"
+        "dev.zio" %%% "zio-config-yaml" % ZioConfigVersion
+        // "com.guidoschmidt17" %%% "zio-pgcopy" % "0.1.0-RC1"
       )
     )
     .settings(
@@ -66,12 +67,13 @@ lazy val `simple` =
   crossProject(JVMPlatform)
     .crossType(CrossType.Full)
     .in(file("modules/examples/simple"))
+    .dependsOn(`zio-pgcopy`)
     .settings(commonSettings)
     .settings(
       libraryDependencies ++= Seq(
         "dev.zio" %%% "zio-config" % ZioConfigVersion,
-        "dev.zio" %%% "zio-config-yaml" % ZioConfigVersion,
-        "com.guidoschmidt17" %%% "zio-pgcopy" % "0.1.0-RC1"
+        "dev.zio" %%% "zio-config-yaml" % ZioConfigVersion
+        // "com.guidoschmidt17" %%% "zio-pgcopy" % "0.1.0-RC1"
       )
     )
     .settings(

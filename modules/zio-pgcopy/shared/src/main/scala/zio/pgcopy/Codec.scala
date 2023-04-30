@@ -29,6 +29,10 @@ object Codec:
     s"$tablename(${compiletime.constValueTuple[m.MirroredElemLabels].toList.mkString(",")})"
   inline final def outExpression[A: ClassTag](using m: ProductOf[A]): String =
     s"select ${compiletime.constValueTuple[m.MirroredElemLabels].toList.mkString(",")} from $tablename"
+  inline final def inExpression[A: ClassTag](tablename: String)(using m: ProductOf[A]): String =
+    s"$tablename(${compiletime.constValueTuple[m.MirroredElemLabels].toList.mkString(",")})"
+  inline final def outExpression[A: ClassTag](tablename: String)(using m: ProductOf[A]): String =
+    s"select ${compiletime.constValueTuple[m.MirroredElemLabels].toList.mkString(",")} from $tablename"
 
   final class BiCodec[A](decode: ByteBuf ?=> A, encode: A => ByteBuf ?=> Unit) extends Codec[A]:
     inline final def apply()(using ByteBuf): A = decode

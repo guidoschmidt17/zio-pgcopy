@@ -75,8 +75,8 @@ object Util:
       buf.writeInt(len)
       buf.writeBytes(bytes, 0, len)
 
-  private[pgcopy] given [A]: Conversion[A | Null, A] with
-    inline def apply(a: A | Null): A = a.nn
+  inline private[pgcopy] given [A]: Conversion[A | Null, A] with
+    def apply(a: A | Null): A = a.nn
 
   private[pgcopy] case class NumericComponents(weight: Int, sign: Int, scale: Int, digits: ListBuffer[Int]):
     val len = digits.length
