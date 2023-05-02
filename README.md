@@ -39,16 +39,17 @@ As a user you need to provide a `given` instance of a `MakeError` (Any => E). Us
 ```scala
 given MakeError[String] = _.toString
 ```
-Then you need a case class for type `A` which matches the table (relation) in your PoostgreSQL database. If the case class follows some rules of convention then the `Encoder` and `Decoder` as well as the `insert` and `select` `sql` will be generated automatically. 
+Then you need a case class for type `A` which matches the table in your PootgreSQL database. If the case class follows some rules of convention then the `Encoder` and `Decoder` as well as the `insert` and `select` `sql` will be generated automatically. 
 These conventional rules are as follows:
-- The case class name in lowercase must match the PostgreSQL relation name. If not you need to provide the relation name with exact case.
+- The case class name in lowercase must match the PostgreSQL relation name. If not, you need to provide the relation name with exact case.
 - The case class variable names must match the field names of the relation in PostgreSQL in exact case and the order of variables and fields must match. 
-- The case class variables must map to their corresponding PostgreSQL data type (eg. `String` -> `text`, `Long` -> `int8`, `BigDecimal` -> `numeric`). You'll find all mappings below.
+- The case class variables must map to their corresponding PostgreSQL data type (eg. `String` -> `text`, `Long` -> `int8`, `BigDecimal` -> `numeric`). You'll find all supported mappings below.
 - Fields that get filled by PostgreSQL on insert (eg. BigSerial or a 'now' timestamptz) must be omitted.
 - Null values/fields are not supported.
-
+  
+&nbsp;
 ### `Simple` example
-The `Simple` example uses a relation (table) with only one `int4` column. The required Codecs (Encoder/Decoder) are generated automatically using Scala 3 tuple operations. So are the corresponding insert and select sql expressions. 
+The `Simple` example uses a table with only one `int4` column. The required Codecs (Encoder/Decoder) are generated automatically using Scala 3 tuple operations. So are the corresponding insert and select sql expressions. 
 ```sql
 create unlogged table simple (
   i int4 not null
@@ -80,12 +81,84 @@ def run =
 // results: in: 10.3 / out: 4.1 / in/out: 6.3 (mio ops/sec)
 ```
 &nbsp;
+### `Facts` example
+The `Facts` example uses a more realistic table which is similar to what we use in our eventsourcing system. The required Codecs (Encoder/Decoder) are generated automatically using Scala 3 tuple operations. So are the corresponding insert and select sql expressions. 
+```sql
+-- types
+
+create type eventcategory as enum('Created', 'Read', 'Updated', 'Deleted', 'Meta');
+
+-- tables, indexes
+
+create unlogged table fact (
+  serialid bigserial primary key, 
+  created timestamptz not null default now(),
+  aggregateid uuid not null,
+  aggregatelatest int4 not null,
+  eventcategory eventcategory not null,
+  eventid uuid not null,
+  eventdatalength int4 not null,
+  eventdata bytea not null,
+  tags text[] not null
+  ) with (autovacuum_enabled = off);
+
+```
+Declare a case class and its codec:
+```scala
+import Util.Uuid
+
+object Event:
+  enum Category:
+    case Created, Read, Updated, Deleted, Meta
+  given Codec[Event.Category] = BiCodec(Category.valueOf(text()), text(_))
+
+case class Fact(
+    aggregateid: Uuid,
+    aggregatelatest: Int,
+    eventcategory: Event.Category,
+    eventid: Uuid,
+    eventdatalength: Int,
+    eventdata: Array[Byte],
+    tags: Array[String]
+)
+
+given Codec[Fact] = BiCodec(Decoder(), Encoder(_))
+
+object Fact:
+  val in = inExpression[Fact]   // fact(aggregateid,aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags)
+  val out = outExpression[Fact] // select aggregateid,aggregatelatest,eventcategory,eventid,eventdatalength,eventdata,tags from fact
+
+```
+And use it:
+```scala
+def run =
+  import Fact.*
+  for
+    data <- randomFacts(n)
+    warmup = for
+      _ <- copy.in(in, ZStream.fromChunk(data).rechunk(32 * 1024))
+      _ <- ZIO.scoped(copy.out[String, Narrow.Fact](out, n).flatMap(_.runDrain))
+    yield ()
+    _ <- warmup.repeatN(warmups)
+    _ = begin.set(nanoTime)
+    i <- Random.nextIntBetween(1, 500)
+    _ <- ZIO.sleep(i.milliseconds)
+    loop = for
+      _ <- copy.in(in, ZStream.fromChunk(data).rechunk(32 * 1024)).measured(s"copy.in")
+      _ <- ZIO.scoped(copy.out[String, Narrow.Fact](out, n).flatMap(_.runDrain).measured(s"copy.out"))
+    yield lap
+    _ <- loop.repeatN(repeats)
+  yield ()
+
+  // results: in: 0.9 / out: 2.3 / in/out: 1.4 (mio ops/sec)
+```
+&nbsp;
 ## Mappings
 ### Mapping to and from Scala and PostgreSQL data types
 ```scala 
   Boolean <-> bool
   Array[Byte] <-> bytea
-  Char <-> char 
+  Char <-> char(1) 
   String <-> text
   String <-> varchar
   String <-> name
@@ -150,5 +223,34 @@ _uuid -> 2951,
 _jsonb -> 3807
 ```
 
+&nbsp;
+## Configuration
+```yaml
+zio-pgcopy:
+  server:
+    host           : localhost
+    port           : 5432
+    sslmode        : disable # disable | trust | runtime 
+    database       : facts
+    user           : jimmy
+    password       : banana
 
+  pool:
+    min            : 32
+    max            : 32
+    timeout        : 15.minutes
+
+  retry:
+    base           : 200.milliseconds
+    factor         : 1.33
+    retries        : 5
+
+  io:
+    so_sndbuf      : 32768  
+    so_rcvbuf      : 32768
+    bytebufsize    : 8000000
+    checkbufsize   : false  
+    incomingsize   : 4096
+    outgoingsize   : 4096
+```
 
