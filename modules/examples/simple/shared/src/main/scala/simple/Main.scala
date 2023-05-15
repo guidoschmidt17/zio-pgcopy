@@ -48,7 +48,7 @@ object Main extends ZIOAppDefault:
         _ <- loop.repeatN(repeats)
       yield ()
 
-      // results: in: 10.3 / out: 4.1 / in/out: 6.3 (mio ops/sec)
+      // results: in: 12.3 / out: 4.1 / in/out: 6.3 (mio ops/sec)
 
   val program = ZIO
     .service[Main]

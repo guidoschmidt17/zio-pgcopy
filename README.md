@@ -1,14 +1,14 @@
 (under construction)
 
 # `zio-pgcopy`
-A library to perform very fast bulk inserts and bulk selects to a PostgreSQL database using Scala 3, ZIO 2, Netty 4.1 and the PostgreSQL wire protocol 3 with binary encoding/decoding.  
+A library to perform very fast bulk inserts and bulk selects to a PostgreSQL database using Scala 3, ZIO 2, Netty 4.1 and the PostgreSQL wire protocol 3 with binary codecs.  
 &nbsp;
 ## Motivation
 `zio-pgcopy` is an offspring of a larger eventsourcing project. In this project we use PostgreSQL as the eventstore. After some time we realized that we basically needed two operations: bulk inserts and bulk selects. But at the best throughput possible.  
 
 `zio-pgcopy` is highly inspired by the excellent libraries `skunk` and `clj-pgcopy` (hope it's ok to borrow the name). Both use the PostgreSQL wire protocol 3. The former supports text encoding only and does not implement the copy in/out commands. But it is extremly versatile. The latter only implements the copy-in command based on the binary codec (and is written in Clojure). Hence, we decided to build our own library (and base it on Scala 3, ZIO 2, Netty and binary codecs).
 
-The binary encoding/decoding for most datatypes is very straightforward and for some a little quirky (eg. numeric). But it is almost always superior to the text codec in terms of network payload and cpu processing. For more details see the sections below.
+The binary codecs for most datatypes are very straightforward and for some a little quirky (eg. `numeric`). But they are almost always superior to the text codec in terms of network payload and cpu processing. For more details see the sections below.
 
 With `zio-pgcopy` we managed to increase the throughput from 10000-100000 rows/sec to 1-5 million rows/sec depending on table width and column complexity.    
 &nbsp;
@@ -20,6 +20,10 @@ With `zio-pgcopy` we managed to increase the throughput from 10000-100000 rows/s
 Add to your 'build.sbt':
 ```scala
 libraryDependencies += "com.guidoschmidt17" %% "zio-pgcopy" % "0.1.0-RC1"
+```
+If you run the examples please make sure to change the permissions for the server.key file to 600 or the PostgreSQL instance will not start.
+```bash
+chmod 600 ./modules/examples/<example>/postgres-db/server.key
 ```
 &nbsp;
 ## Usage
@@ -37,17 +41,19 @@ trait Copy:
 
   def out[E: MakeError, A: Decoder](select: String, limit: Long = Long.MaxValue): ZIO[Scope, E, ZStream[Any, E, Chunk[A]]]
 ``` 
-As a user you need to provide a `given` instance of a `MakeError` (Any => E). Using a `Throwable` for `E` enables stack traces.
+As a user you need to provide a `given` instance of a `MakeError` (Any => E). Typically you would use `String`, `Throwable` or `ZIO#Cause` for `E`.
 ```scala
 given MakeError[String] = _.toString
 ```
-Then you need a case class for type `A` which matches the table in your PootgreSQL database. If the case class follows some rules of convention then the `Encoder` and `Decoder` as well as the `insert` and `select` `sql` will be generated automatically. 
+Then you need to define a case class for type `A` which matches the table in your PostgreSQL database. If the case class follows some rules of convention then the `Encoder` and `Decoder` as well as the `insert` and `select` `sql` will be generated automatically. 
 These conventional rules are as follows:
 - The case class name in lowercase must match the PostgreSQL relation name. If not, you need to provide the relation name with exact case.
 - The case class variable names must match the field names of the relation in PostgreSQL in exact case and the order of variables and fields must match. 
 - The case class variables must map to their corresponding PostgreSQL data type (eg. `String` -> `text`, `Long` -> `int8`, `BigDecimal` -> `numeric`). You'll find all supported mappings below.
 - Fields that get filled by PostgreSQL on insert (eg. BigSerial or a 'now' timestamptz) must be omitted.
 - Null values/fields are not supported.
+
+If any of these rules is not satisfied then you need to write the `Codec` and the `insert/select sql` by hand (see below).
   
 &nbsp;
 ### `Simple` example
@@ -79,8 +85,6 @@ def run =
     yield ()
     _ <- loop.repeatN(repeats)
   yield ()
-
-// results: in: 10.3 / out: 4.1 / in/out: 6.3 (mio ops/sec)
 ```
 &nbsp;
 ### `Facts` example
@@ -151,8 +155,6 @@ def run =
     yield lap
     _ <- loop.repeatN(repeats)
   yield ()
-
-  // results: in: 0.9 / out: 2.3 / in/out: 1.4 (mio ops/sec)
 ```
 &nbsp;
 ## Mappings

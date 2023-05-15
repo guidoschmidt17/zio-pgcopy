@@ -5,16 +5,16 @@ ThisBuild / logLevel := Level.Warn
 Global / excludeLintKeys ++= Set(showSuccess, publishMavenStyle, pomIncludeRepository)
 Global / onChangedBuildSource := ReloadOnSourceChanges
 
+ThisBuild / scalaVersion := "3.2.2"
+
 val ZioPgcopyVersion = "0.1.0-RC2"
 
 val ZioVersion = "2.0.13"
-val ZioConfigVersion = "4.0.0-RC14"
+val ZioConfigVersion = "4.0.0-RC16"
 val NettyVersion = "4.1.92.Final"
 val ScramVersion = "2.1"
 
 ThisBuild / version := ZioPgcopyVersion
-
-ThisBuild / scalaVersion := "3.2.2"
 
 name := "zio-pgcopy"
 
@@ -50,7 +50,6 @@ lazy val `facts` =
       libraryDependencies ++= Seq(
         "dev.zio" %%% "zio-config" % ZioConfigVersion,
         "dev.zio" %%% "zio-config-yaml" % ZioConfigVersion
-        // "com.guidoschmidt17" %%% "zio-pgcopy" % "0.1.0-RC1"
       )
     )
     .settings(
