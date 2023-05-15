@@ -1,3 +1,5 @@
+(under construction)
+
 # `zio-pgcopy`
 A library to perform very fast bulk inserts and bulk selects to a PostgreSQL database using Scala 3, ZIO 2, Netty 4.1 and the PostgreSQL wire protocol 3 with binary encoding/decoding.  
 &nbsp;
