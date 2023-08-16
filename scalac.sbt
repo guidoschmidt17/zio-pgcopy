@@ -7,6 +7,5 @@ ThisBuild / scalacOptions ++= Seq(
   "-Xcheck-macros",
   "-Xfatal-warnings",
   "-Ysafe-init",
-  "-Yexplicit-nulls",
-  "-Ylightweight-lazy-vals"
+  "-Yexplicit-nulls"
 )

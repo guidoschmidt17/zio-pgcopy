@@ -5,7 +5,7 @@ networks:
 services:
   simple:
     container_name: postgres-simple
-    image: postgres:16beta2-bullseye
+    image: postgres:16beta3-bullseye
     restart: always
     environment:
       POSTGRES_DB: simple

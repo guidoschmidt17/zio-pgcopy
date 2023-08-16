@@ -22,7 +22,7 @@ object Main extends ZIOAppDefault:
   val warmups = 1
   val p = 2
   val n = 400000
-  val timeout = 120.seconds
+  val timeout = 180.seconds
   val begin = AtomicLong(0L)
   val elapsed = AtomicLong(0L)
   def lap = elapsed.set(nanoTime - begin.get)
