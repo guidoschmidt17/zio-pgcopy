@@ -16,7 +16,7 @@ import Util.given
 
 private sealed trait FrontendMessage:
   val payload: ByteBuf
-  protected val buf: ByteBuf = PooledByteBufAllocator.DEFAULT.directBuffer(bytebufsize)
+  protected given buf: ByteBuf = PooledByteBufAllocator.DEFAULT.directBuffer(bytebufsize)
   protected def lengthPrefixed(i: Int, p: ByteBuf): ByteBuf =
     buf.setInt(i, p.writerIndex - i)
 
@@ -135,12 +135,16 @@ private object FrontendMessage:
   case class CopyData[A](rows: Chunk[A])(using encoder: Encoder[A]) extends TaggedFrontendMessage('d'):
     override def toString = s"CopyOut(${rows.size})"
     val payload =
-      given ByteBuf = buf
-      val b = if checkbufsize then buf.capacity else 0
-      buf.writeBytes(Header, 0, Header.length)
-      rows.foreach(encoder(_))
-      buf.writeShort(-1)
-      if checkbufsize then if buf.capacity > b then println(s"warning: enlarge 'io.bytebufsize', $b -> ${buf.capacity}")
+      if checkbufsize then
+        val c = buf.capacity
+        buf.writeBytes(Header, 0, Header.length)
+        rows.foreach(encoder(_))
+        buf.writeShort(-1)
+        if buf.capacity > c then println(s"warning: enlarge 'io.bytebufsize', $c -> ${buf.capacity}")
+      else
+        buf.writeBytes(Header, 0, Header.length)
+        rows.foreach(encoder(_))
+        buf.writeShort(-1)
       lengthPrefixed(buf)
 
   private final val Header: Array[Byte] = "PGCOPY".getBytes.nn ++ Array(0x0a, 0xff, 0x0d, 0x0a, 0, 0, 0, 0, 0, 0, 0, 0, 0).map(_.toByte)
@@ -148,4 +152,4 @@ private object FrontendMessage:
   private[pgcopy] final var ioConfig: IoConfig | Null = null
 
   private final lazy val bytebufsize = ioConfig.bytebufsize
-  private final lazy val checkbufsize = ioConfig.checkbufsize
+  private final lazy val checkbufsize = ioConfig.bufsizecheck

@@ -43,6 +43,9 @@ object Util:
     x |= x >> 16
     x + 1
 
+  private[pgcopy] inline final def isPower2(i: Int) =
+    ((i & (i - 1)) == 0) && (i > 0)
+
   extension (buf: ByteBuf)
     inline def ignoreInt: Unit =
       buf.readerIndex(buf.readerIndex + 4)
@@ -75,7 +78,7 @@ object Util:
       buf.writeInt(len)
       buf.writeBytes(bytes, 0, len)
 
-  inline private[pgcopy] given [A]: Conversion[A | Null, A] with
+  inline private[pgcopy] final given [A]: Conversion[A | Null, A] with
     def apply(a: A | Null): A = a.nn
 
   private[pgcopy] case class NumericComponents(weight: Int, sign: Int, scale: Int, digits: ListBuffer[Int]):

@@ -17,13 +17,14 @@ object Main extends ZIOAppDefault:
 
   given MakeError[String] = _.toString
 
-  val sessions = 7
+  val sessions = 19
   val repeats = 29
   val warmups = 1
   val p = 2
   val n = 100000
-  val timeout = 60.seconds
-  val begin = AtomicLong(0)
+  val chunksize = 32 * 1024
+  val timeout = 180.seconds
+  val begin = AtomicLong(0L)
   val elapsed = AtomicLong(0L)
   def lap = elapsed.set(nanoTime - begin.get)
 
@@ -34,7 +35,7 @@ object Main extends ZIOAppDefault:
       for
         data <- randomFacts(n)
         warmup = for
-          _ <- copy.in(in, ZStream.fromChunk(data).rechunk(32 * 1024))
+          _ <- copy.in(in, ZStream.fromChunk(data).rechunk(chunksize))
           _ <- ZIO.scoped(copy.out[String, Narrow.Fact](out, n).flatMap(_.runDrain))
         yield ()
         _ <- warmup.repeatN(warmups)
@@ -42,13 +43,13 @@ object Main extends ZIOAppDefault:
         i <- Random.nextIntBetween(1, 500)
         _ <- ZIO.sleep(i.milliseconds)
         loop = for
-          _ <- copy.in(in, ZStream.fromChunk(data).rechunk(32 * 1024)).measured(s"copy.in")
+          _ <- ZIO.unit // copy.in(in, ZStream.fromChunk(data).rechunk(chunksize)).measured(s"copy.in")
           _ <- ZIO.scoped(copy.out[String, Narrow.Fact](out, n).flatMap(_.runDrain).measured(s"copy.out"))
         yield lap
         _ <- loop.repeatN(repeats)
       yield ()
 
-      // results: in: 0.9 / out: 2.3 / in/out: 1.4 (mio ops/sec)
+      // results: in: 1.0 / out: 2.5 / in/out: 1.4 (million ops/sec)
 
   val program = ZIO
     .service[Main]

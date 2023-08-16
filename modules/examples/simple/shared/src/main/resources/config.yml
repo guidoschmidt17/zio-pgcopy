@@ -16,12 +16,12 @@ zio-pgcopy:
   retry:
     base           : 200.milliseconds
     factor         : 1.33
-    retries        : 20
+    retries        : 10
 
   io:
     so_sndbuf      : 32768  
     so_rcvbuf      : 32768
-    bytebufsize    : 8000000
-    checkbufsize   : false  
-    incomingsize   : 4096
-    outgoingsize   : 4096
+    bytebufsize    : 4000000
+    bufsizecheck   : false  
+    incomingsize   : 32768
+    outgoingsize   : 32768

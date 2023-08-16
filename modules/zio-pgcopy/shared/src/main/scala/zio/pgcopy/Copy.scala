@@ -10,7 +10,7 @@ trait Copy:
 
   def in[E: MakeError, A: Encoder](insert: String, rows: ZStream[Any, E, A]): IO[E, Unit]
 
-  def out[E: MakeError, A: Decoder](select: String, limit: Long = Long.MaxValue): ZIO[Scope, E, ZStream[Any, E, Chunk[A]]]
+  def out[E: MakeError, A: Decoder](select: String, limit: Long = Long.MaxValue): ZIO[Scope, E, ZStream[Any, E, A]]
 
 object Copy:
 
@@ -39,12 +39,12 @@ object Copy:
 
     def out[E: MakeError, A: Decoder](select: String, limit: Long) =
       inline def copy(using makeError: MakeError[E]) =
-        def loopResult(out: Queue[Take[E, Chunk[A]]], offsetRef: Ref[Long], n: Long) =
+        def loopResult(out: Queue[Take[E, A]], offsetRef: Ref[Long], n: Long) =
           def resultStream(offset: Long, limit: Long) =
             for
               connection <- pool.get
               stream <- connection.copyOut[A](s"$select offset $offset limit $limit")
-            yield stream.tap(c => out.offer(Take.single(c)).flatMap(_ => offsetRef.update(_ + c.size)))
+            yield stream.tap(c => out.offer(Take.chunk(c)).flatMap(_ => offsetRef.update(_ + c.size)))
           for
             offset <- offsetRef.get
             result <- resultStream(offset, n - offset)
@@ -52,7 +52,7 @@ object Copy:
           yield ()
         for
           offset: Ref[Long] <- Ref.make(0L)
-          out: Queue[Take[E, Chunk[A]]] <- Queue.bounded(config.io.outgoingsize)
+          out: Queue[Take[E, A]] <- Queue.bounded(config.io.outgoingsize)
           outstream = ZStream
             .fromQueue(out, out.capacity)
             .flattenTake
@@ -101,10 +101,10 @@ object Copy:
     val so_sndbuf = Config.int("so_sndbuf").map(Util.ceilPower2(_)).withDefault(32 * 1024)
     val so_rcvbuf = Config.int("so_rcvbuf").map(Util.ceilPower2(_)).withDefault(32 * 1024)
     val bytebufsize = Config.int("bytebufsize").map(Util.ceilPower2(_)).withDefault(128 * 1024)
-    val checkbufsize = Config.boolean("checkbufsize").withDefault(false)
+    val bufsizecheck = Config.boolean("bufsizecheck").withDefault(false)
     val incomingsize = Config.int("incomingsize").map(Util.ceilPower2(_)).withDefault(8 * 1024)
-    val outgoingsize = Config.int("outgoingsize").map(Util.ceilPower2(_)).withDefault(4 * 1024)
-    val io = (so_rcvbuf ++ so_sndbuf ++ bytebufsize ++ checkbufsize ++ incomingsize ++ outgoingsize)
+    val outgoingsize = Config.int("outgoingsize").map(Util.ceilPower2(_)).withDefault(8 * 1024)
+    val io = (so_rcvbuf ++ so_sndbuf ++ bytebufsize ++ bufsizecheck ++ incomingsize ++ outgoingsize)
       .map((a, b, c, d, e, f) => IoConfig(a, b, c, d, e, f))
       .nested(("io"))
 
@@ -120,5 +120,5 @@ private case class ServerConfig(
 )
 private case class PoolConfig(min: Int, max: Int, timeout: Duration)
 private case class RetryConfig(base: Duration, factor: Double, retries: Int)
-private case class IoConfig(so_rcvbuf: Int, so_sndbuf: Int, bytebufsize: Int, checkbufsize: Boolean, incomingsize: Int, outgoingsize: Int)
+private case class IoConfig(so_rcvbuf: Int, so_sndbuf: Int, bytebufsize: Int, bufsizecheck: Boolean, incomingsize: Int, outgoingsize: Int)
 private case class Configuration(server: ServerConfig, pool: PoolConfig, retry: RetryConfig, io: IoConfig)

@@ -1,4 +1,4 @@
-(under construction)
+(tbd)
 
 # `zio-pgcopy`
 A library to perform very fast bulk inserts and bulk selects to a PostgreSQL database using Scala 3, ZIO 2, Netty 4.1 and the PostgreSQL wire protocol 3 with binary codecs.  
@@ -14,16 +14,38 @@ With `zio-pgcopy` we managed to increase the throughput from 10000-100000 rows/s
 &nbsp;
 ## Features
 - **API**: zio-pgcopy provides two PostgreSQL specific commands: CopyIn (bulk inserts) and CopyOut (bulk selects)
-- **Performance**: It supports inserts and selects at a rate of millions of rows per second      
+- **Performance**: It supports inserts and selects at a rate of millions of rows per second (tbd)
+- **PostgreSQL wire protocol with binary codecs**: tbd
+- **Read/Write operations on Netty's direct IO buffers**: tbd 
+- **Connection pooling**: Based on `ZIO#ZPool` database connections are pooled and reused. They also provide resilience: In case of a server error all connections are re-established. Running `copy-in`s resume at the latest chunk, running `copy-out`s resume at the latest offset. If the outage is within the defined retry period the clients should only be exposed to a short delay
+- **Automatic codec generation**: tbd
+- **Semi-automatic Codec generation**: tbd
+- **Configuration**: Based on `ZIO#Config` a client can choose from all available `ZIO Config` implementations. In the samples `Yaml` files are used, for instance.
+- 
 &nbsp;
 ## Setup
 Add to your 'build.sbt':
 ```scala
 libraryDependencies += "com.guidoschmidt17" %% "zio-pgcopy" % "0.1.0-RC1"
 ```
-If you run the examples please make sure to change the permissions for the server.key file to 600 or the PostgreSQL instance will not start.
+If you run the examples please ensure to change the permissions for the server.key file to 600 or the PostgreSQL instance will not start.
 ```bash
-chmod 600 ./modules/examples/<example>/postgres-db/server.key
+cd ./modules/examples/<example>/postgres-db
+chmod 600 ./server.key
+# drop/create and start docker container
+./start-over
+# start psql client in the container, if this fails please check the container's log
+./client
+> select * from <example>;
+# quit
+cd -
+# build using sbt
+sbt
+> cd <example>JVM
+> assembly
+# in another terminal run the assembly; if required you can add configuration parameters to the command line with -D
+> java -jar -Dzio-pgcopy.server.sslmode=trust <generated-jar-file>
+
 ```
 &nbsp;
 ## Usage
@@ -253,7 +275,7 @@ zio-pgcopy:
     so_sndbuf      : 32768  
     so_rcvbuf      : 32768
     bytebufsize    : 8000000
-    checkbufsize   : false  
+    bufsizecheck   : false  
     incomingsize   : 4096
     outgoingsize   : 4096
 ```

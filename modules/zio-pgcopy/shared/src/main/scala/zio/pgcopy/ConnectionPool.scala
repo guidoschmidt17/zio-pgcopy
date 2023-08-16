@@ -110,8 +110,9 @@ private case class Connection[E: MakeError](
     }
 
   private def send(message: FrontendMessage)(using makeError: MakeError[E]): IO[E, Unit] =
+    val buf = message.payload
     startup *> ZIO
-      .attempt(channel.writeAndFlush(message.payload).sync)
+      .attempt(channel.writeAndFlush(buf).sync)
       .catchAllDefect(ZIO.fail(_))
       .catchAll(e => close *> ZIO.fail(makeError(e)))
       .unit
@@ -218,8 +219,6 @@ private case class ConnectionPool[E: MakeError] private (
   def invalidate(connection: Connection[E]) =
     zpool.get.flatMap(_.invalidate(connection))
 
-  // private final val counter = AtomicInteger(0)
-
   private def acquire(using makeError: MakeError[E]): IO[E, Connection[E]] =
     val loop = for
       incoming: Incoming <- Queue.bounded(incomingsize)
@@ -227,7 +226,6 @@ private case class ConnectionPool[E: MakeError] private (
       connection = Connection[E](channelfuture, incoming, this, config)
       _ = channelfuture.sync.channel.pipeline.addLast(ProtocolHandler(connection))
       _ <- ZIO.yieldNow
-    // _ <- ZIO.debug(s"acquired ${counter.incrementAndGet}")
     yield connection
     loop
       .catchAllDefect(e => ZIO.fail(e))
@@ -235,7 +233,6 @@ private case class ConnectionPool[E: MakeError] private (
       .catchAll(e => ZIO.fail(makeError(e)))
 
   private def release[E](connection: Connection[E]): UIO[Unit] =
-    // ZIO.debug(s"released ${counter.decrementAndGet}") *>
     ZIO.yieldNow *> connection.close.ignore
 
   private[pgcopy] final def RetrySchedule(message: String) =

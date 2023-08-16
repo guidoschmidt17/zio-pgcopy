@@ -23,7 +23,7 @@ object Main extends ZIOAppDefault:
   val p = 2
   val n = 400000
   val timeout = 120.seconds
-  val begin = AtomicLong(0)
+  val begin = AtomicLong(0L)
   val elapsed = AtomicLong(0L)
   def lap = elapsed.set(nanoTime - begin.get)
 
@@ -48,7 +48,7 @@ object Main extends ZIOAppDefault:
         _ <- loop.repeatN(repeats)
       yield ()
 
-      // results: in: 12.3 / out: 4.1 / in/out: 6.3 (mio ops/sec)
+      // results: in: 13.5 / out: 7.8 / in/out: 6.5 (million ops/sec)
 
   val program = ZIO
     .service[Main]

@@ -5,7 +5,7 @@ networks:
 services:
   facts:
     container_name: postgres-facts
-    image: postgres:15.3-bullseye
+    image: postgres:16beta2-bullseye
     restart: always
     environment:
       POSTGRES_DB: facts

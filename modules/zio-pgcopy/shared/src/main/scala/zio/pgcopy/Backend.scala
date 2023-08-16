@@ -73,7 +73,7 @@ private object BackendMessage:
   object AuthenticationSASL extends Decoder[AuthenticationSASL]:
     inline final val Tag = 10
     def apply()(using buf: ByteBuf) =
-      var mechanisms = Seq.empty[String]
+      var mechanisms: Seq[String] = Nil
       var more = true
       while more do
         buf.readUtf8z match
@@ -205,7 +205,7 @@ private object BackendMessage:
   object ErrorResponse extends Decoder[ErrorResponse]:
     inline final val Tag = 'E'
     def apply()(using buf: ByteBuf) =
-      var errors = Seq.empty[(Char, String)]
+      var errors: Seq[(Char, String)] = Nil
       var more = true
       while more do
         (buf.readByte: @switch) match
