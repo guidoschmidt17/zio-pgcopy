@@ -5,7 +5,7 @@ ThisBuild / logLevel := Level.Warn
 Global / excludeLintKeys ++= Set(showSuccess, publishMavenStyle, pomIncludeRepository)
 Global / onChangedBuildSource := ReloadOnSourceChanges
 
-ThisBuild / scalaVersion := "3.3.0"
+ThisBuild / scalaVersion := "3.3.1"
 
 val ZioPgcopyVersion = "0.1.0-RC2"
 
