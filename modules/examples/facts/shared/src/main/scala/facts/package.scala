@@ -3,7 +3,7 @@ package object facts:
   import zio.*
   import java.nio.charset.StandardCharsets.UTF_8
 
-  final def readResourceFile(name: String): String =
+  @annotation.nowarn final def readResourceFile(name: String): String =
     String(getClass.nn.getClassLoader.nn.getResourceAsStream(name).nn.readAllBytes, UTF_8)
 
   extension [R, E, A](f: ZIO[R, E, A])
