@@ -7,7 +7,7 @@ ThisBuild / logLevel := Level.Warn
 
 update / evictionWarningOptions := EvictionWarningOptions.empty
 
-addSbtPlugin("ch.epfl.scala" % "sbt-scalafix" % "0.10.4")
+addSbtPlugin("ch.epfl.scala" % "sbt-scalafix" % "0.11.1")
 addSbtPlugin("com.timushev.sbt" % "sbt-rewarn" % "0.1.3")
 addSbtPlugin("com.timushev.sbt" % "sbt-updates" % "0.6.4")
 addSbtPlugin("com.typesafe.sbt" % "sbt-git" % "1.0.2")
