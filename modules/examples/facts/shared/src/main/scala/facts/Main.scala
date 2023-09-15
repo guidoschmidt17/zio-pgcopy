@@ -43,7 +43,7 @@ object Main extends ZIOAppDefault:
         i <- Random.nextIntBetween(1, 500)
         _ <- ZIO.sleep(i.milliseconds)
         loop = for
-          _ <- ZIO.unit // copy.in(in, ZStream.fromChunk(data).rechunk(chunksize)).measured(s"copy.in")
+          _ <- copy.in(in, ZStream.fromChunk(data).rechunk(chunksize)).measured(s"copy.in")
           _ <- ZIO.scoped(copy.out[String, Narrow.Fact](out, n).flatMap(_.runDrain).measured(s"copy.out"))
         yield lap
         _ <- loop.repeatN(repeats)
