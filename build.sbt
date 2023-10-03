@@ -9,9 +9,9 @@ ThisBuild / scalaVersion := "3.3.1"
 
 val ZioPgcopyVersion = "0.1.0-RC2"
 
-val ZioVersion = "2.0.17"
+val ZioVersion = "2.0.18"
 val ZioConfigVersion = "4.0.0-RC16"
-val NettyVersion = "4.1.98.Final"
+val NettyVersion = "4.1.99.Final"
 val ScramVersion = "2.1"
 
 ThisBuild / version := ZioPgcopyVersion
