@@ -1,4 +1,4 @@
-ThisBuild / scalaVersion := "2.12.17"
+ThisBuild / scalaVersion := "2.12.18"
 ThisBuild / useSuperShell := false
 ThisBuild / autoStartServer := false
 ThisBuild / showSuccess := false
